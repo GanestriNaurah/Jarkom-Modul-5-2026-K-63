@@ -2281,3 +2281,464 @@ ping -c 4 deb.debian.org
 
 Keberhasilan pengujian menunjukkan bahwa node internal tetap dapat melakukan resolusi nama domain dan mengakses alamat tersebut melalui internet.
 
+# Soal 6
+
+Tugas ini bertujuan untuk memberikan alamat IP statis dan default gateway kepada seluruh node non-router pada topologi jaringan GNS3. Sebelumnya, jaringan sudah berhasil dibangun dan komunikasi antar-router telah berjalan. Namun, perangkat client dan server belum memiliki konfigurasi alamat jaringan permanen.
+
+Oleh karena itu, konfigurasi dilakukan agar setiap node memiliki identitas alamat IP sendiri dan dapat berkomunikasi dengan perangkat lain, baik dalam satu jaringan maupun jaringan yang berbeda.
+
+Adapun tujuan pengerjaan tugas ini adalah:
+
+1. Memberikan IP address statis kepada seluruh node non-router.
+2. Memberikan default gateway sesuai dengan subnet masing-masing.
+3. Menggunakan alamat IP berdasarkan pembagian VLSM dan glosarium.
+4. Menyimpan konfigurasi agar tetap tersedia setelah perangkat di-restart.
+5. Melakukan pengujian alamat IP dan konektivitas gateway pada Unit-01.
+
+# Dasar Konfigurasi
+
+Konfigurasi menggunakan pembagian alamat IP dari tugas VLSM sebelumnya dengan prefix jaringan utama `10.95.0.0/16`.
+
+Setiap node non-router menggunakan interface `eth0` untuk terhubung ke switch pada jaringan masing-masing.
+
+Setiap konfigurasi juga diawali dengan konfigurasi loopback:
+
+```bash
+auto lo
+iface lo inet loopback
+```
+
+Interface loopback merupakan interface internal yang digunakan sistem untuk komunikasi dengan dirinya sendiri.
+
+## Daftar IP Address dan Default Gateway
+
+Seluruh node non-router diberikan alamat IP sesuai subnet masing-masing.
+
+| No. | Node | IP Address | Prefix | Default Gateway |
+|---:|---|---|---:|---|
+| 1 | Quarters | 10.95.0.2 | /23 | 10.95.0.1 |
+| 2 | Comm-Net | 10.95.2.2 | /24 | 10.95.2.1 |
+| 3 | Hangar-Crew | 10.95.3.2 | /25 | 10.95.3.1 |
+| 4 | Sachiel | 10.95.3.130 | /26 | 10.95.3.129 |
+| 5 | Pen-Pen | 10.95.3.194 | /27 | 10.95.3.193 |
+| 6 | Medic-Bay | 10.95.3.195 | /27 | 10.95.3.193 |
+| 7 | Relay-Node | 10.95.3.226 | /27 | 10.95.3.225 |
+| 8 | Garden-Staff | 10.95.4.2 | /27 | 10.95.4.1 |
+| 9 | Dock-Crew | 10.95.4.34 | /28 | 10.95.4.33 |
+| 10 | Tokyo3-Core | 10.95.4.106 | /30 | 10.95.4.105 |
+| 11 | Magi-Casper | 10.95.4.58 | /29 | 10.95.4.57 |
+| 12 | Magi-Balthasar | 10.95.4.59 | /29 | 10.95.4.57 |
+| 13 | Magi-Melchior | 10.95.4.60 | /29 | 10.95.4.57 |
+| 14 | Entry-Plug | 10.95.4.50 | /29 | 10.95.4.49 |
+| 15 | Dummy-Plug | 10.95.4.51 | /29 | 10.95.4.49 |
+| 16 | Unit-01 | 10.95.4.66 | /29 | 10.95.4.65 |
+| 17 | Unit-02 | 10.95.4.67 | /29 | 10.95.4.65 |
+| 18 | Unit-00 | 10.95.4.68 | /29 | 10.95.4.65 |
+| 19 | Adam | 10.95.4.75 | /29 | 10.95.4.73 |
+| 20 | Lilith | 10.95.4.74 | /29 | 10.95.4.73 |
+| 21 | Zeruel | 10.95.4.82 | /29 | 10.95.4.81 |
+| 22 | Armisael | 10.95.4.83 | /29 | 10.95.4.81 |
+| 23 | Radar-Array | 10.95.4.90 | /29 | 10.95.4.89 |
+| 24 | Archive-Vault | 10.95.4.98 | /30 | 10.95.4.97 |
+| 25 | Spy | 10.95.4.102 | /30 | 10.95.4.101 |
+
+Jumlah keseluruhan perangkat yang dikonfigurasi adalah **25 node non-router**.
+
+## Implementasi Konfigurasi IP Statis
+
+Berikut konfigurasi lengkap masing-masing node.
+
+### Quarters
+
+```bash
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+    address 10.95.0.2
+    netmask 255.255.254.0
+    gateway 10.95.0.1
+```
+
+### Comm-Net
+
+```bash
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+    address 10.95.2.2
+    netmask 255.255.255.0
+    gateway 10.95.2.1
+```
+
+### Hangar-Crew
+
+```bash
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+    address 10.95.3.2
+    netmask 255.255.255.128
+    gateway 10.95.3.1
+```
+
+### Sachiel
+
+```bash
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+    address 10.95.3.130
+    netmask 255.255.255.192
+    gateway 10.95.3.129
+```
+
+### Pen-Pen
+
+```bash
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+    address 10.95.3.194
+    netmask 255.255.255.224
+    gateway 10.95.3.193
+```
+
+### Medic-Bay
+
+```bash
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+    address 10.95.3.195
+    netmask 255.255.255.224
+    gateway 10.95.3.193
+```
+
+### Relay-Node
+
+```bash
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+    address 10.95.3.226
+    netmask 255.255.255.224
+    gateway 10.95.3.225
+```
+
+### Garden-Staff
+
+```bash
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+    address 10.95.4.2
+    netmask 255.255.255.224
+    gateway 10.95.4.1
+```
+
+### Dock-Crew
+
+```bash
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+    address 10.95.4.34
+    netmask 255.255.255.240
+    gateway 10.95.4.33
+```
+
+### Tokyo3-Core
+
+```bash
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+    address 10.95.4.106
+    netmask 255.255.255.252
+    gateway 10.95.4.105
+```
+
+### Magi-Casper
+
+```bash
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+    address 10.95.4.58
+    netmask 255.255.255.248
+    gateway 10.95.4.57
+```
+
+### Magi-Balthasar
+
+```bash
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+    address 10.95.4.59
+    netmask 255.255.255.248
+    gateway 10.95.4.57
+```
+
+### Magi-Melchior
+
+```bash
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+    address 10.95.4.60
+    netmask 255.255.255.248
+    gateway 10.95.4.57
+```
+
+### Entry-Plug
+
+```bash
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+    address 10.95.4.50
+    netmask 255.255.255.248
+    gateway 10.95.4.49
+```
+
+### Dummy-Plug
+
+```bash
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+    address 10.95.4.51
+    netmask 255.255.255.248
+    gateway 10.95.4.49
+```
+
+### Unit-01
+
+```bash
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+    address 10.95.4.66
+    netmask 255.255.255.248
+    gateway 10.95.4.65
+```
+
+### Unit-02
+
+```bash
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+    address 10.95.4.67
+    netmask 255.255.255.248
+    gateway 10.95.4.65
+```
+
+### Unit-00
+
+```bash
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+    address 10.95.4.68
+    netmask 255.255.255.248
+    gateway 10.95.4.65
+```
+
+### Adam
+
+```bash
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+    address 10.95.4.75
+    netmask 255.255.255.248
+    gateway 10.95.4.73
+```
+
+### Lilith
+
+```bash
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+    address 10.95.4.74
+    netmask 255.255.255.248
+    gateway 10.95.4.73
+```
+
+### Zeruel
+
+```bash
+auto lo
+iface lo inet static
+
+auto eth0
+iface eth0 inet static
+    address 10.95.4.82
+    netmask 255.255.255.248
+    gateway 10.95.4.81
+```
+
+### Armisael
+
+```bash
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+    address 10.95.4.83
+    netmask 255.255.255.248
+    gateway 10.95.4.81
+```
+
+### Radar-Array
+
+```bash
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+    address 10.95.4.90
+    netmask 255.255.255.248
+    gateway 10.95.4.89
+```
+
+### Archive-Vault
+
+```bash
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+    address 10.95.4.98
+    netmask 255.255.255.252
+    gateway 10.95.4.97
+```
+
+### Spy
+
+```bash
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+    address 10.95.4.102
+    netmask 255.255.255.252
+    gateway 10.95.4.101
+```
+
+## Pengujian Konfigurasi
+
+Pengujian dilakukan untuk memastikan setiap perangkat telah memiliki alamat IP dan gateway sesuai dengan subnet masing-masing.
+
+### Pemeriksaan IP Address
+
+Perintah yang digunakan:
+
+```bash
+ip -br addr
+```
+
+Perintah tersebut digunakan untuk menampilkan seluruh interface jaringan beserta alamat IP yang terpasang dalam format ringkas.
+
+Pada Unit-01, hasil yang diperoleh adalah:
+
+<img width="446" height="92" alt="6 - ip addr" src="https://github.com/user-attachments/assets/2356073b-f65c-4411-a8b6-4900631cda18" />
+
+Berdasarkan hasil tersebut, interface `eth0` pada Unit-01 telah memiliki alamat IP `10.95.4.66/29`, sesuai dengan konfigurasi yang ditentukan.
+
+### Pemeriksaan Default Gateway
+
+Perintah yang digunakan:
+
+```bash
+ip route
+```
+
+Hasil pada Unit-01:
+
+<img width="397" height="70" alt="6 - ip route" src="https://github.com/user-attachments/assets/ac8ea61b-08e7-43e8-929d-31210747a0e5" />
+
+Hasil tersebut menunjukkan bahwa default gateway Unit-01 telah diarahkan ke `10.95.4.65` melalui interface `eth0`.
+
+Alamat tersebut merupakan alamat interface router Misato yang menjadi gateway untuk jaringan Unit.
+
+### Pengujian Ping Gateway Unit-01
+
+Pengujian konektivitas dilakukan menggunakan perintah:
+
+```bash
+ping -c 4 10.95.4.65
+```
+
+Hasil pengujian:
+
+<img width="448" height="137" alt="6 - ping" src="https://github.com/user-attachments/assets/7c6a8103-8a9c-423f-9312-001887b80754" />
+
+Hasil tersebut menunjukkan bahwa seluruh paket ICMP berhasil diterima oleh gateway. Tidak terdapat packet loss selama pengujian.
+
+Dengan demikian, Unit-01 telah berhasil berkomunikasi dengan gateway pada jaringan yang sama.
+
+### Pengujian Persistensi Setelah Restart
+
+Pengujian persistensi dilakukan dengan me-restart node melalui GNS3.
+
+Setelah perangkat dinyalakan kembali, pemeriksaan dilakukan menggunakan:
+
+```bash
+ip -br addr
+ip route
+ping -c 4 10.95.4.65
+```
+
+<img width="478" height="245" alt="6 - restart" src="https://github.com/user-attachments/assets/67524025-9877-48ef-beb3-e60f279c5038" />
+
+Hasil pemeriksaan menunjukkan bahwa konfigurasi IP address dan default gateway tetap tersedia setelah restart.
+
+
