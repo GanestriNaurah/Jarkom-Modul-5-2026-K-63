@@ -1828,3 +1828,456 @@ iptables -t nat -nvxL POSTROUTING
 
 Nilai counter akan bertambah ketika paket dari jaringan internal melewati aturan NAT tersebut.
 
+# Soal 5
+
+Menerapkan keamanan jaringan pada router Gendo menggunakan firewall iptables. Gendo berperan sebagai gateway utama yang menghubungkan seluruh jaringan internal dengan NAT1 sebagai akses menuju internet.
+
+Pada tugas ini, akses masuk ke Gendo dibatasi dengan mengubah policy INPUT dan FORWARD menjadi DROP. Meskipun demikian, beberapa jenis komunikasi tetap diizinkan agar jaringan tetap dapat beroperasi sebagaimana mestinya.
+
+Konfigurasi firewall harus memenuhi beberapa ketentuan, yaitu:
+
+1. Mengizinkan paket balasan dari koneksi yang sudah terbentuk.
+2. Mengizinkan traffic dari jaringan internal menuju internet.
+3. Mengizinkan komunikasi antar-LAN.
+4. Mengizinkan node internal mengakses Gendo secara langsung.
+5. Mengizinkan komunikasi melalui interface loopback.
+6. Mengizinkan DHCP dari NAT1 agar Gendo tetap mendapatkan alamat IP secara otomatis.
+7. Menolak koneksi baru yang berasal dari sisi NAT1.
+8. Memastikan konfigurasi pada Tugas 2, 3, dan 4 tetap berjalan.
+
+Seluruh konfigurasi firewall dibuat dalam satu file bernama `gendo.sh` agar lebih mudah dijalankan dan dikelola.
+
+## Konsep dan Cara Kerja Firewall
+
+Firewall merupakan mekanisme keamanan jaringan yang digunakan untuk mengatur paket data yang masuk, keluar, maupun melewati sebuah perangkat.
+
+Pada tugas ini digunakan iptables dengan dua policy utama, yaitu INPUT dan FORWARD.
+
+### INPUT
+
+Chain INPUT digunakan untuk mengatur paket yang ditujukan langsung kepada router Gendo.
+
+Policy INPUT diubah menjadi DROP:
+
+```bash
+iptables -P INPUT DROP
+```
+
+Artinya, seluruh paket yang masuk menuju Gendo akan ditolak secara default, kecuali paket yang secara khusus diizinkan melalui rule firewall.
+
+Dengan demikian, koneksi baru dari sisi NAT1 tidak dapat masuk secara bebas ke Gendo.
+
+### FORWARD
+
+Chain FORWARD digunakan untuk mengatur paket yang melewati Gendo menuju jaringan lain.
+
+Policy FORWARD diubah menjadi DROP:
+
+```bash
+iptables -P FORWARD DROP
+```
+
+Artinya, paket yang melewati Gendo akan ditolak secara default kecuali terdapat aturan yang mengizinkannya.
+
+Beberapa pengecualian dibuat agar komunikasi internal, akses internet, dan paket balasan tetap dapat berjalan.
+
+### OUTPUT
+
+Chain OUTPUT digunakan untuk mengatur paket yang dikirimkan langsung oleh Gendo.
+
+Policy OUTPUT tetap menggunakan ACCEPT:
+
+```bash
+iptables -P OUTPUT ACCEPT
+```
+
+Dengan demikian, Gendo tetap dapat mengirim paket keluar, misalnya untuk melakukan komunikasi dengan NAT1 dan layanan internet.
+
+## Konfigurasi Firewall pada Gendo
+
+### Membuat File gendo.sh
+
+Seluruh konfigurasi firewall disimpan dalam satu file bernama `gendo.sh`.
+
+File dibuat menggunakan perintah:
+
+```bash
+nano /root/gendo.sh
+```
+
+Kemudian dimasukkan konfigurasi berikut:
+
+### 4.2 Isi Lengkap gendo.sh
+
+```bash
+#!/bin/bash
+
+# ==========================================
+# FIREWALL GENDO - TUGAS 5
+# ==========================================
+
+# Mengaktifkan IP forwarding
+sysctl -w net.ipv4.ip_forward=1
+
+# ==========================================
+# 1. MEMBERSIHKAN RULE FIREWALL SEBELUMNYA
+# ==========================================
+
+iptables -F
+iptables -X
+
+# ==========================================
+# 2. MENGATUR DEFAULT POLICY
+# ==========================================
+
+iptables -P INPUT DROP
+iptables -P FORWARD DROP
+iptables -P OUTPUT ACCEPT
+
+# ==========================================
+# 3. RULE INPUT
+# ==========================================
+
+# Mengizinkan loopback
+iptables -A INPUT -i lo -j ACCEPT
+
+# Mengizinkan balasan koneksi yang sudah ada
+iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+# Mengizinkan balasan DHCP dari NAT1
+iptables -A INPUT -i eth0 -p udp --sport 67 --dport 68 -j ACCEPT
+
+# Mengizinkan node internal mengakses Gendo
+iptables -A INPUT -s 10.95.0.0/16 ! -i eth0 -j ACCEPT
+
+# ==========================================
+# 4. RULE FORWARD
+# ==========================================
+
+# Mengizinkan balasan koneksi yang sudah ada
+iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+# Mengizinkan komunikasi antar-LAN
+iptables -A FORWARD -s 10.95.0.0/16 -d 10.95.0.0/16 -j ACCEPT
+
+# Mengizinkan jaringan internal menuju internet
+iptables -A FORWARD -s 10.95.0.0/16 -o eth0 -j ACCEPT
+
+# ==========================================
+# 5. RULE NAT MASQUERADE
+# ==========================================
+
+# Menghapus rule MASQUERADE lama yang sama agar tidak duplikat
+while iptables -t nat -C POSTROUTING \
+-s 10.95.0.0/16 -o eth0 -j MASQUERADE 2>/dev/null
+do
+    iptables -t nat -D POSTROUTING \
+    -s 10.95.0.0/16 -o eth0 -j MASQUERADE
+done
+
+# Menambahkan NAT MASQUERADE
+iptables -t nat -A POSTROUTING \
+-s 10.95.0.0/16 -o eth0 -j MASQUERADE
+
+echo "Konfigurasi firewall Gendo berhasil diterapkan."
+```
+
+### Memberikan Izin Eksekusi
+
+Setelah file dibuat, diberikan izin agar file dapat dijalankan sebagai script.
+
+Perintah:
+
+```bash
+chmod +x /root/gendo.sh
+```
+
+Kemudian script dijalankan menggunakan:
+
+```bash
+bash /root/gendo.sh
+```
+
+Jika berhasil, akan muncul pesan:
+
+```text
+net.ipv4.ip_forward = 1
+Konfigurasi firewall Gendo berhasil diterapkan.
+```
+
+<img width="309" height="59" alt="5 - bash gendo" src="https://github.com/user-attachments/assets/513359bb-e706-485c-8b25-6cc072fde5b7" />
+
+Pesan tersebut menunjukkan bahwa IP forwarding telah diaktifkan dan konfigurasi firewall berhasil dijalankan.
+
+## Penjelasan Setiap Rule Firewall
+
+### Mengaktifkan IP Forwarding
+
+```bash
+sysctl -w net.ipv4.ip_forward=1
+```
+
+Perintah ini mengaktifkan kemampuan Gendo untuk meneruskan paket IPv4 dari satu interface ke interface lainnya.
+
+IP forwarding diperlukan karena Gendo berperan sebagai router utama yang menghubungkan seluruh jaringan internal dengan internet.
+
+### Membersihkan Rule Sebelumnya
+
+```bash
+iptables -F
+iptables -X
+```
+
+Perintah `iptables -F` digunakan untuk menghapus seluruh rule pada chain tabel filter.
+
+Perintah `iptables -X` digunakan untuk menghapus chain tambahan yang tidak lagi digunakan.
+
+Langkah ini dilakukan agar aturan firewall yang diterapkan tidak bercampur dengan aturan filter sebelumnya.
+
+Rule pada tabel NAT tidak dihapus menggunakan perintah tersebut, sehingga konfigurasi NAT dapat dipertahankan dan dikelola secara terpisah.
+
+### Mengatur Default Policy
+
+```bash
+iptables -P INPUT DROP
+iptables -P FORWARD DROP
+iptables -P OUTPUT ACCEPT
+```
+
+Pengaturan ini menjadikan INPUT dan FORWARD menggunakan kebijakan DROP secara default.
+
+Dengan demikian, paket yang tidak sesuai dengan aturan yang diizinkan akan ditolak.
+
+Sementara itu, OUTPUT tetap ACCEPT agar Gendo tetap dapat mengirim paket keluar.
+
+### Mengizinkan Loopback
+
+```bash
+iptables -A INPUT -i lo -j ACCEPT
+```
+
+Loopback merupakan interface internal perangkat yang menggunakan alamat `127.0.0.1`.
+
+Rule ini diperlukan agar proses komunikasi internal pada Gendo tetap berjalan.
+
+### Mengizinkan Balasan Koneksi
+
+```bash
+iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+```
+
+Rule ini mengizinkan paket yang merupakan bagian dari koneksi yang sudah terbentuk maupun paket yang berhubungan dengan koneksi tersebut.
+
+Pada chain FORWARD juga diterapkan aturan yang sama:
+
+```bash
+iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+```
+
+Aturan tersebut memungkinkan paket balasan dari internet diteruskan kembali menuju jaringan internal.
+
+Dengan demikian, koneksi yang dimulai dari jaringan internal tetap dapat menerima respons dari internet meskipun policy INPUT dan FORWARD menggunakan DROP.
+
+### Mengizinkan DHCP dari NAT1
+
+```bash
+iptables -A INPUT -i eth0 -p udp --sport 67 --dport 68 -j ACCEPT
+```
+
+Rule ini mengizinkan paket balasan DHCP dari NAT1 menuju Gendo melalui interface `eth0`.
+
+DHCP menggunakan UDP port 67 pada server dan UDP port 68 pada client.
+
+Aturan ini diperlukan karena Gendo mendapatkan alamat IP secara otomatis dari NAT1.
+
+Tanpa aturan tersebut, proses penerimaan alamat IP DHCP dapat terganggu akibat policy INPUT DROP.
+
+### Mengizinkan Jaringan Internal Mengakses Gendo
+
+```bash
+iptables -A INPUT -s 10.95.0.0/16 ! -i eth0 -j ACCEPT
+```
+
+Rule ini mengizinkan paket yang berasal dari prefix internal `10.95.0.0/16` dan masuk melalui interface selain `eth0`.
+
+Dengan demikian, node internal dapat berkomunikasi langsung dengan Gendo.
+
+Contohnya adalah ketika node internal melakukan ping ke alamat interface Gendo atau mengakses layanan yang berjalan pada Gendo.
+
+### Mengizinkan Komunikasi Antar-LAN
+
+```bash
+iptables -A FORWARD -s 10.95.0.0/16 -d 10.95.0.0/16 -j ACCEPT
+```
+
+Rule ini mengizinkan komunikasi antarjaringan internal yang menggunakan prefix `10.95.0.0/16`.
+
+Dengan adanya aturan ini, paket dari satu LAN dapat diteruskan menuju LAN lainnya melalui Gendo.
+
+Komunikasi tersebut tidak mengalami translasi alamat karena NAT hanya diterapkan pada paket yang keluar melalui interface `eth0`.
+
+### Mengizinkan Jaringan Internal Mengakses Internet
+
+```bash
+iptables -A FORWARD -s 10.95.0.0/16 -o eth0 -j ACCEPT
+```
+
+Rule ini mengizinkan paket yang berasal dari jaringan internal untuk diteruskan keluar melalui interface `eth0` menuju NAT1.
+
+Aturan ini mempertahankan fungsi akses internet yang telah dibuat pada Tugas 4.
+
+### Mempertahankan NAT MASQUERADE
+
+```bash
+iptables -t nat -A POSTROUTING \
+-s 10.95.0.0/16 -o eth0 -j MASQUERADE
+```
+
+Rule ini mempertahankan konfigurasi NAT dari Tugas 4.
+
+MASQUERADE mengubah alamat IP sumber dari jaringan internal menjadi alamat IP yang digunakan Gendo pada interface `eth0`.
+
+Penggunaan MASQUERADE memungkinkan konfigurasi tetap berfungsi ketika alamat IP dari NAT1 berubah.
+
+Sebelum menambahkan rule baru, script memeriksa dan menghapus rule MASQUERADE yang identik agar tidak terjadi duplikasi.
+
+## Pengujian Konfigurasi
+
+Setelah script `gendo.sh` dijalankan, dilakukan beberapa pengujian untuk memastikan firewall berfungsi dan konfigurasi Tugas 2 sampai 4 tetap berjalan.
+
+### Memeriksa Alamat IP Gendo
+
+Perintah:
+
+```bash
+ip -br addr
+```
+
+<img width="449" height="138" alt="5 - ip addr" src="https://github.com/user-attachments/assets/0cc185b5-b5dd-48d9-84a1-2dcdd37748e9" />
+
+Pemeriksaan dilakukan untuk memastikan seluruh interface Gendo masih memiliki alamat IP sesuai konfigurasi sebelumnya.
+
+Interface `eth0` harus memperoleh alamat IP melalui DHCP NAT1, sedangkan interface internal menggunakan alamat IP statis.
+
+Alamat IP NAT1 yang digunakan pada saat pengujian adalah:
+
+```text
+192.168.122.124/24
+```
+
+### Memeriksa Default Route
+
+Perintah:
+
+```bash
+ip route
+```
+
+<img width="440" height="306" alt="5 - ip route" src="https://github.com/user-attachments/assets/94ea86b9-eb85-4907-afbd-a59b94c9883f" />
+
+Hasil tersebut menunjukkan bahwa Gendo masih memiliki jalur keluar menuju NAT1.
+
+Static route menuju seluruh jaringan internal juga harus tetap tersedia.
+
+### Memeriksa IP Forwarding
+
+Perintah:
+
+```bash
+sysctl net.ipv4.ip_forward
+```
+
+<img width="274" height="29" alt="5 - sysctl" src="https://github.com/user-attachments/assets/d017ac44-2b37-40e6-890a-b4dbb562cfd3" />
+
+Hasil tersebut menunjukkan bahwa IP forwarding tetap aktif sehingga Gendo dapat meneruskan paket antarjaringan.
+
+### Memeriksa Policy dan Rule Firewall
+
+Untuk menampilkan seluruh rule pada tabel filter digunakan:
+
+```bash
+iptables -S
+```
+
+<img width="401" height="130" alt="5 - -s" src="https://github.com/user-attachments/assets/2b6d6ba9-75c4-431d-865a-204a3eb264b2" />
+
+Hasil tersebut digunakan untuk membuktikan bahwa policy INPUT dan FORWARD telah diubah menjadi DROP, sementara traffic yang diperlukan tetap diizinkan.
+
+### Memeriksa Rule NAT
+
+Untuk memastikan NAT dari Tugas 4 tetap berjalan, digunakan perintah:
+
+```bash
+iptables -t nat -S
+```
+
+<img width="354" height="75" alt="5 - -t" src="https://github.com/user-attachments/assets/8274da9a-342c-4a83-bc31-163215fb2fee" />
+
+Dengan adanya rule tersebut, paket dari jaringan internal yang keluar melalui Gendo tetap dapat diterjemahkan alamatnya ketika menuju internet.
+
+### Pengujian Ping Internet dari Armisael
+
+Armisael digunakan sebagai salah satu node pengujian untuk memastikan akses internet dari jaringan internal tetap berjalan setelah firewall diterapkan.
+
+Konfigurasi Armisael:
+
+- IP Address: `10.95.4.83/29`
+- Gateway: `10.95.4.81`
+
+Perintah pengujian:
+
+```bash
+ping -c 4 8.8.8.8
+```
+
+Hasil pengujian menunjukkan bahwa Armisael berhasil menerima balasan dari alamat IP publik `8.8.8.8`.
+
+<img width="398" height="118" alt="5 - ping 8" src="https://github.com/user-attachments/assets/c6305dcf-d161-45ae-ba05-dc73e12d38ec" />
+
+Keberhasilan tersebut menunjukkan bahwa:
+
+1. Paket dari Armisael dapat melewati router Shigeru dan Gendo.
+2. Gendo mengizinkan paket internal menuju internet.
+3. NAT MASQUERADE tetap berjalan.
+4. Paket balasan dari internet dapat diteruskan kembali menuju Armisael.
+
+Dengan demikian, firewall tidak menghalangi koneksi internet yang dimulai dari jaringan internal.
+
+### Pengujian Komunikasi Antar-LAN
+
+Untuk memastikan komunikasi antar-LAN tetap berjalan, pengujian dapat dilakukan dari Armisael menuju node internal lainnya.
+
+Pengujian menuju Lilith:
+
+```bash
+ping -c 4 10.95.4.74
+```
+
+Pengujian menuju Sachiel:
+
+```bash
+ping -c 4 10.95.3.130
+```
+
+Pengujian menuju Comm-Net:
+
+```bash
+ping -c 4 10.95.2.2
+```
+
+<img width="424" height="339" alt="5 - ping" src="https://github.com/user-attachments/assets/a5f52585-2cdc-4fbd-9eb9-cfc05b9d5c36" />
+
+Pengujian ini digunakan untuk memastikan bahwa rule FORWARD antar-LAN tetap mengizinkan komunikasi antara jaringan internal yang berbeda.
+
+### Pengujian Resolusi DNS
+
+Untuk memastikan DNS dari Tugas 4 tetap berjalan, dilakukan pengujian:
+
+```bash
+ping -c 4 deb.debian.org
+```
+
+<img width="440" height="125" alt="5 - ping deb" src="https://github.com/user-attachments/assets/679a69e1-a28a-4a01-8004-12b2b786a1e7" />
+
+Keberhasilan pengujian menunjukkan bahwa node internal tetap dapat melakukan resolusi nama domain dan mengakses alamat tersebut melalui internet.
+
