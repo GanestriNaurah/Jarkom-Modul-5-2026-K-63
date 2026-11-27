@@ -4526,4 +4526,379 @@ Berikut rekapitulasi seluruh pengujian yang telah dilakukan:
 | 4 | Casper → Lilith | 4/4 berhasil | Ping diizinkan |
 | 5 | TCP port 5000 Casper | LISTEN | Layanan aktif |
 
+# Soal 12 
+
+Pada soal ini dilakukan analisis dan perbaikan terhadap konfigurasi firewall pada node Magi-Casper setelah dijalankan script sabotase `break_fw.sh`.
+
+Permasalahan yang terjadi adalah Magi-Casper tidak dapat melakukan ping ke `8.8.8.8`, tidak dapat menjalankan `apt-get update`, dan perangkat Unit-00 tidak dapat terhubung ke layanan TCP port 5000 milik Magi-Casper. Meskipun demikian, Casper tetap harus menolak permintaan ping dari perangkat lain.
+
+Tujuan pengerjaan ini adalah:
+
+1. Menjalankan script sabotase `break_fw.sh` pada Magi-Casper.
+2. Menemukan seluruh penyebab gangguan pada konfigurasi firewall.
+3. Memperbaiki aturan firewall tanpa menghilangkan tujuan hardening.
+4. Mempertahankan policy INPUT dalam kondisi DROP.
+5. Memastikan ping masuk ke Magi-Casper tetap ditolak.
+6. Memastikan Magi-Casper dapat melakukan ping ke internet dan menjalankan `apt-get update`.
+7. Memastikan Unit-00 dapat terhubung ke layanan TCP port 5000 Magi-Casper.
+
+## Informasi Topologi dan Alamat IP
+
+Node yang digunakan dalam pengujian:
+
+| Node | Alamat IP | Keterangan |
+|---|---|---|
+| Magi-Casper | 10.95.4.58/29 | Server yang dikonfigurasi firewall-nya |
+| Unit-00 | 10.95.4.68/29 | Client penguji koneksi TCP |
+| Gateway Magi-Casper | 10.95.4.57 | Gateway menuju jaringan luar |
+| Internet | 8.8.8.8 | Tujuan pengujian konektivitas |
+
+Magi-Casper dan Unit-00 berada pada subnet yang sama, yaitu `10.95.4.56/29`.
+
+## Menjalankan Script Sabotase
+
+Script `break_fw.sh` dijalankan pada node Magi-Casper tanpa membaca isi script terlebih dahulu, sesuai instruksi soal.
+
+Perintah yang digunakan:
+
+```bash
+chmod +x /root/break_fw.sh
+sh /root/break_fw.sh
+```
+
+<img width="281" height="53" alt="image-10" src="https://github.com/user-attachments/assets/ecdb5b9b-6a4f-42fd-a95c-cb888822bf64" />
+
+Hasil eksekusi:
+
+```text
+Script sudah dirusak
+```
+
+Hasil tersebut menunjukkan bahwa script sabotase berhasil dijalankan.
+
+## Pemeriksaan Kondisi Setelah Sabotase
+
+Setelah script dijalankan, dilakukan pemeriksaan terhadap aturan firewall menggunakan perintah:
+
+```bash
+iptables -S
+```
+
+<img width="285" height="91" alt="image-11" src="https://github.com/user-attachments/assets/1c7c7c9c-2a19-48c0-b01b-686f87f664d5" />
+
+Hasil pemeriksaan:
+
+```text
+-P INPUT DROP
+-P FORWARD ACCEPT
+-P OUTPUT ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -p icmp -j DROP
+-A OUTPUT -p udp -m udp --dport 53 -j DROP
+```
+
+Selanjutnya dilakukan pemeriksaan tabel routing:
+
+```bash
+ip route
+```
+
+<img width="471" height="41" alt="image-12" src="https://github.com/user-attachments/assets/e84ad6bc-80d5-4706-9e4f-b76d6bb8ef67" />
+
+Hasil pemeriksaan:
+
+```text
+default via 10.95.4.57 dev eth0
+10.95.4.56/29 dev eth0 proto kernel scope link src 10.95.4.58
+```
+
+Hasil tersebut menunjukkan bahwa default route Magi-Casper masih mengarah ke gateway yang benar, yaitu `10.95.4.57`. Dengan demikian, gangguan bukan disebabkan oleh kesalahan konfigurasi routing.
+
+Kemudian diperiksa apakah layanan TCP port 5000 masih berjalan:
+
+```bash
+ss -lntp | grep ':5000'
+```
+
+<img width="476" height="44" alt="image-13" src="https://github.com/user-attachments/assets/7defbf39-0f48-4955-abac-5df5309f8272" />
+
+Hasil pemeriksaan:
+
+```text
+LISTEN 0 1 0.0.0.0:5000 0.0.0.0:* users:(("nc.traditional",pid=187,fd=3))
+```
+
+Hasil tersebut menunjukkan bahwa layanan Netcat pada port 5000 masih aktif dan berada dalam kondisi LISTEN. Oleh karena itu, kegagalan koneksi dari Unit-00 disebabkan oleh aturan firewall, bukan karena layanan TCP berhenti berjalan.
+
+## Analisis Penyebab Sabotase
+
+Berdasarkan hasil pemeriksaan `iptables -S`, ditemukan tiga penyebab utama yang mengakibatkan gangguan pada Magi-Casper.
+
+### Pemblokiran seluruh paket ICMP masuk
+
+Aturan yang ditemukan:
+
+```bash
+iptables -A INPUT -p icmp -j DROP
+```
+
+Aturan tersebut memblokir seluruh paket ICMP yang masuk ke Magi-Casper.
+
+Dampaknya, bukan hanya permintaan ping dari perangkat lain yang ditolak, tetapi juga paket balasan ping dari internet. Ketika Casper melakukan ping ke `8.8.8.8`, paket permintaan dapat keluar, tetapi paket balasannya diblokir oleh firewall.
+
+Akibatnya, Casper tidak dapat menyelesaikan pengujian ping ke internet.
+
+### Pemblokiran DNS keluar
+
+Aturan yang ditemukan:
+
+```bash
+iptables -A OUTPUT -p udp --dport 53 -j DROP
+```
+
+Aturan tersebut memblokir seluruh paket UDP keluar yang menuju port 53, yaitu port yang umumnya digunakan oleh layanan DNS.
+
+Dampaknya, Casper tidak dapat mengirim permintaan DNS untuk menerjemahkan nama domain seperti `deb.debian.org` menjadi alamat IP.
+
+Kondisi tersebut menyebabkan proses `apt-get update` mengalami kegagalan ketika mencoba mengakses repository menggunakan nama domain.
+
+### Tidak adanya izin koneksi TCP port 5000
+
+Policy INPUT pada Magi-Casper adalah:
+
+```bash
+-P INPUT DROP
+```
+
+Policy tersebut menyebabkan semua koneksi masuk ditolak secara default apabila tidak terdapat aturan yang secara khusus mengizinkannya.
+
+Pada konfigurasi setelah sabotase, tidak ditemukan aturan yang mengizinkan koneksi TCP baru menuju port 5000 dari Unit-00.
+
+Akibatnya, meskipun layanan Netcat port 5000 masih aktif, Unit-00 tidak dapat terhubung ke layanan tersebut karena paket koneksinya ditolak oleh firewall.
+
+## Proses Perbaikan Firewall
+
+Perbaikan dilakukan dengan tetap mempertahankan tujuan hardening. Policy INPUT tidak diubah menjadi ACCEPT dan permintaan ping masuk tetap ditolak.
+
+Seluruh perintah berikut dijalankan pada node Magi-Casper.
+
+### Menghapus aturan ICMP yang terlalu luas
+
+Perintah:
+
+```bash
+iptables -D INPUT -p icmp -j DROP
+```
+
+Aturan tersebut dihapus karena memblokir seluruh jenis paket ICMP, termasuk paket balasan yang dibutuhkan Casper ketika melakukan ping ke perangkat lain.
+
+### Mengizinkan koneksi yang sudah terbentuk
+
+Perintah:
+
+```bash
+iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+```
+
+Aturan ini digunakan untuk mengizinkan paket balasan dari koneksi yang sudah dimulai oleh Magi-Casper.
+
+Dengan demikian, Casper dapat menerima balasan dari komunikasi yang sah, termasuk ping dan koneksi DNS yang dimulai dari Casper.
+
+### Tetap memblokir permintaan ping masuk
+
+Perintah:
+
+```bash
+iptables -A INPUT -p icmp --icmp-type echo-request -j DROP
+```
+
+Aturan ini menggantikan pemblokiran ICMP secara keseluruhan dengan pemblokiran khusus terhadap ICMP Echo Request.
+
+Dengan demikian, perangkat lain tetap tidak dapat melakukan ping ke Magi-Casper, tetapi paket balasan ping yang dimulai oleh Casper tidak ikut diblokir oleh aturan tersebut.
+
+### Mengizinkan koneksi TCP port 5000 dari Unit-00
+
+Perintah:
+
+```bash
+iptables -A INPUT -p tcp -s 10.95.4.68 --dport 5000 -m conntrack --ctstate NEW -j ACCEPT
+```
+
+Aturan tersebut memberikan izin kepada Unit-00 dengan alamat IP `10.95.4.68` untuk membuat koneksi TCP baru menuju port 5000 Magi-Casper.
+
+Perangkat lain tidak mendapatkan izin koneksi baru melalui aturan ini.
+
+### Menghapus pemblokiran DNS keluar
+
+Perintah:
+
+```bash
+iptables -D OUTPUT -p udp --dport 53 -j DROP
+```
+
+Aturan tersebut dihapus agar Magi-Casper dapat mengirim permintaan DNS keluar.
+
+Karena policy OUTPUT sudah ACCEPT, penghapusan aturan DROP memungkinkan DNS query UDP keluar menuju server DNS.
+
+Paket balasan DNS dapat diterima melalui aturan ESTABLISHED,RELATED yang telah ditambahkan sebelumnya.
+
+## Hasil Pemeriksaan Firewall Setelah Perbaikan
+
+Setelah seluruh perintah perbaikan dijalankan, dilakukan pemeriksaan kembali menggunakan:
+
+```bash
+iptables -S
+```
+
+<img width="500" height="112" alt="image-14" src="https://github.com/user-attachments/assets/9eebda3e-0547-4d55-bfb4-8cefeca96ba0" />
+
+Hasil pemeriksaan:
+
+```text
+-P INPUT DROP
+-P FORWARD ACCEPT
+-P OUTPUT ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A INPUT -p icmp -m icmp --icmp-type 8 -j DROP
+-A INPUT -s 10.95.4.68/32 -p tcp -m tcp --dport 5000 -m conntrack --ctstate NEW -j ACCEPT
+```
+
+Berdasarkan hasil tersebut, konfigurasi firewall telah sesuai dengan tujuan pengerjaan.
+
+Policy INPUT tetap DROP, koneksi yang sudah terbentuk diizinkan, permintaan ping masuk tetap ditolak, dan koneksi TCP port 5000 hanya diizinkan dari Unit-00.
+
+Tidak terdapat lagi aturan yang memblokir DNS keluar.
+
+## Pengujian
+
+Setelah perbaikan firewall selesai, dilakukan beberapa pengujian untuk memastikan seluruh fungsi berjalan sesuai ketentuan soal.
+
+### Pengujian konektivitas internet dari Magi-Casper
+
+Pengujian dilakukan dari Magi-Casper menggunakan perintah:
+
+```bash
+ping -c 4 8.8.8.8
+```
+
+<img width="417" height="132" alt="image-15" src="https://github.com/user-attachments/assets/488cb142-7c5a-49ee-a7bd-d0907be4a572" />
+
+Hasil pengujian:
+
+```text
+PING 8.8.8.8 (8.8.8.8) 56(84) bytes of data.
+64 bytes from 8.8.8.8: icmp_seq=1 ttl=110 time=20.1 ms
+64 bytes from 8.8.8.8: icmp_seq=2 ttl=110 time=19.8 ms
+64 bytes from 8.8.8.8: icmp_seq=3 ttl=110 time=19.4 ms
+64 bytes from 8.8.8.8: icmp_seq=4 ttl=110 time=20.5 ms
+
+--- 8.8.8.8 ping statistics ---
+4 packets transmitted, 4 received, 0% packet loss
+```
+
+Hasil tersebut menunjukkan bahwa Magi-Casper berhasil berkomunikasi dengan alamat `8.8.8.8` tanpa kehilangan paket.
+
+### Pengujian DNS
+
+Pengujian DNS dilakukan menggunakan perintah:
+
+```bash
+getent hosts deb.debian.org
+```
+
+<img width="479" height="167" alt="image-16" src="https://github.com/user-attachments/assets/183b028b-275f-4b37-a73c-bd53279bad54" />
+
+Hasil pengujian:
+
+```text
+2a04:4e42::644 debian.map.fastlydns.net deb.debian.org
+2a04:4e42:200::644 debian.map.fastlydns.net deb.debian.org
+2a04:4e42:400::644 debian.map.fastlydns.net deb.debian.org
+2a04:4e42:600::644 debian.map.fastlydns.net deb.debian.org
+```
+
+Hasil tersebut menunjukkan bahwa nama domain `deb.debian.org` berhasil diterjemahkan menjadi alamat IP.
+
+Dengan demikian, layanan DNS pada Magi-Casper sudah dapat digunakan kembali.
+
+### Pengujian apt-get update
+
+Selanjutnya dilakukan pengujian pembaruan daftar repository menggunakan:
+
+```bash
+apt-get update
+```
+
+<img width="479" height="167" alt="image-17" src="https://github.com/user-attachments/assets/e8ce805c-bd02-4410-a796-9ada9b91aaeb" />
+
+Hasil pengujian:
+
+```text
+Hit:1 http://deb.debian.org/debian trixie InRelease
+Get:2 http://deb.debian.org/debian trixie-updates InRelease [47.3 kB]
+Get:3 http://deb.debian.org/debian-security trixie-security InRelease [43.4 kB]
+Get:4 http://deb.debian.org/debian-security trixie-security/main amd64 Packages [311 kB]
+Fetched 358 kB in 0s (1053 kB/s)
+Reading package lists... Done
+```
+
+Hasil tersebut menunjukkan bahwa proses `apt-get update` berhasil dijalankan. Magi-Casper dapat mengakses repository Debian dan memperbarui daftar paket tanpa mengalami kegagalan resolusi DNS.
+
+### Pengujian koneksi TCP port 5000 dari Unit-00
+
+Pengujian dilakukan dari node Unit-00 menggunakan perintah:
+
+```bash
+nc -zv -w 3 10.95.4.58 5000
+```
+
+<img width="347" height="31" alt="image-19" src="https://github.com/user-attachments/assets/9009968a-d989-485d-a649-20d32fcb791a" />
+
+Hasil pengujian:
+
+```text
+Connection to 10.95.4.58 5000 port [tcp/*] succeeded!
+```
+
+Hasil tersebut menunjukkan bahwa Unit-00 berhasil membuat koneksi TCP ke Magi-Casper pada port 5000.
+
+Dengan demikian, layanan Netcat pada Magi-Casper dapat diakses oleh perangkat yang telah diberikan izin oleh firewall.
+
+### Pengujian penolakan ping masuk ke Magi-Casper
+
+Untuk memastikan tujuan hardening tetap berjalan, dilakukan pengujian ping dari Unit-00 menuju Magi-Casper.
+
+Perintah:
+
+```bash
+ping -c 4 10.95.4.58
+```
+
+<img width="404" height="68" alt="image-20" src="https://github.com/user-attachments/assets/7b523bae-b90e-48bd-a153-ad97d7fa1bc3" />
+
+Hasil pengujian:
+
+```text
+PING 10.95.4.58 (10.95.4.58) 56(84) bytes of data.
+
+--- 10.95.4.58 ping statistics ---
+4 packets transmitted, 0 received, 100% packet loss
+```
+
+Hasil tersebut menunjukkan bahwa Unit-00 tetap tidak dapat melakukan ping ke Magi-Casper.
+
+Hal ini membuktikan bahwa aturan hardening masih aktif meskipun layanan TCP port 5000 telah dibuka secara khusus.
+
+## Rekapitulasi Hasil Pengujian
+
+| No. | Pengujian | Hasil | Status |
+|---|---|---|---|
+| 1 | Eksekusi `break_fw.sh` | Script berhasil dijalankan | Berhasil |
+| 2 | Pemeriksaan policy INPUT | Tetap DROP | Berhasil |
+| 3 | Ping Magi-Casper ke 8.8.8.8 | 4/4 paket diterima | Berhasil |
+| 4 | Resolusi DNS deb.debian.org | Berhasil | Berhasil |
+| 5 | `apt-get update` | Repository berhasil diperbarui | Berhasil |
+| 6 | Koneksi Unit-00 ke TCP 5000 | Connection succeeded | Berhasil |
+| 7 | Ping Unit-00 ke Magi-Casper | 100% packet loss | Berhasil |
 
