@@ -4902,3 +4902,311 @@ Hal ini membuktikan bahwa aturan hardening masih aktif meskipun layanan TCP port
 | 6 | Koneksi Unit-00 ke TCP 5000 | Connection succeeded | Berhasil |
 | 7 | Ping Unit-00 ke Magi-Casper | 100% packet loss | Berhasil |
 
+# Soal 13 : Brankas Balthasar
+
+## Tujuan
+
+Membatasi akses TCP port 5000 dan 5001 pada Magi-Balthasar agar hanya Magi-Casper dan seluruh Pilot yang dapat mengakses layanan tersebut. Port lainnya tidak diubah oleh aturan khusus ini.
+
+## Konfigurasi
+
+Node tujuan: Magi-Balthasar (`10.95.4.59`). File: `13-balthasar.sh`.
+
+| Node yang diizinkan | IP |
+|---|---|
+| Magi-Casper | 10.95.4.58 |
+| Unit-01 | 10.95.4.66 |
+| Unit-02 | 10.95.4.67 |
+| Unit-00 | 10.95.4.68 |
+| Sachiel | 10.95.3.130 |
+
+Chain `MAGI_ACCESS` dibuat untuk memisahkan aturan akses layanan MAGI dari aturan INPUT lainnya. Paket TCP menuju kedua port diarahkan ke chain tersebut. Alamat sumber yang termasuk daftar izin diberikan target `ACCEPT`, sedangkan sumber lainnya seharusnya diberikan `REJECT --reject-with tcp-reset` agar koneksi ditolak langsung.
+
+```bash
+chmod +x 13-balthasar.sh
+./13-balthasar.sh
+iptables -L INPUT -n -v --line-numbers
+iptables -L MAGI_ACCESS -n -v
+```
+
+## Pengujian
+
+Pada Magi-Balthasar, listener dijalankan pada kedua port:
+
+```bash
+nc -lvk 5000 &
+nc -lvk 5001 &
+ss -lntp
+```
+
+Dari masing-masing node penguji:
+
+```bash
+nc -vz -w 3 10.95.4.59 5000
+nc -vz -w 3 10.95.4.59 5001
+```
+
+| Sumber | Target hasil |
+|---|---|
+| Casper dan Pilot | Berhasil |
+| Lilith dan Melchior | Ditolak |
+| Sumber lain | Ditolak |
+
+## Kendala dan penyelesaian
+
+Pada awal pengujian muncul `Connection refused` karena listener belum aktif. Kedua listener kemudian dijalankan sebagai proses background dan diperiksa menggunakan `ss -lntp`. Pada pemeriksaan backup soal 20, aturan penolakan terakhir pada chain MAGI_ACCESS dilaporkan belum terlihat. Oleh karena itu, keberadaan aturan penolakan dan hasil uji sumber yang tidak diizinkan masih perlu dibuktikan sebelum menyatakan seluruh ketentuan terpenuhi.
+
+# Soal 14 : Pembatasan akses Pen-Pen berdasarkan waktu
+
+## Tujuan dan konfigurasi
+
+Firewall pada Pen-Pen (`10.95.3.194`) membatasi ICMP echo-request dan TCP port 80 berdasarkan kelompok sumber dan jadwal. File yang digunakan adalah `14-penpen.sh` dengan chain `PENPEN_ACCESS`.
+
+| Kelompok | IP sumber | Jadwal WIB | Jadwal UTC |
+|---|---|---|---|
+| Pilot | 10.95.4.66, .67, .68; 10.95.3.130 | Senin–Jumat 08.00–16.00 | 01.00–09.00 |
+| Staf Geofront | 10.95.4.74, 10.95.4.75 | Setiap hari 17.00–23.00 | 10.00–16.00 |
+| Dummy system | 10.95.4.50, 10.95.4.51, 10.95.4.102 | Selalu ditolak | Selalu ditolak |
+| Lainnya | Sumber lain | Tidak dibatasi oleh aturan jadwal | Tidak dibatasi |
+
+Modul `time` digunakan untuk mencocokkan waktu, `--weekdays` untuk hari kerja, dan `-s` untuk alamat sumber. Aturan izin berdasarkan jadwal ditempatkan sebelum aturan penolakan untuk kelompok yang sama. Chain diterapkan pada ping masuk dan TCP port 80 saja.
+
+```bash
+chmod +x 14-penpen.sh
+./14-penpen.sh
+date
+iptables -L PENPEN_ACCESS -n -v --line-numbers
+```
+
+## Pengujian
+
+Dari Unit-01, Lilith, Spy, dan node lain sebagai pembanding:
+
+```bash
+ping -c 3 10.95.3.194
+nc -vz -w 3 10.95.3.194 80
+```
+
+Listener TCP 80 harus aktif agar pengujian akses yang diizinkan bermakna. Pada saat pemeriksaan, Pen-Pen menggunakan UTC (11.22 UTC setara 18.22 WIB). Pada waktu tersebut staf berada dalam jadwal izin, sedangkan Pilot berada di luar jadwal. Konfigurasi waktu disesuaikan ke UTC tanpa `--kerneltz`. Pengujian di dalam dan di luar jadwal diperlukan untuk membuktikan kedua kondisi.
+
+# Soal 15 : Banjir ping di pusat komando
+
+## Tujuan dan konfigurasi
+
+Tokyo3-Core (`10.95.4.106`) membatasi ICMP echo-request masuk dengan laju rata-rata lima paket per detik. File: `15-tokyo3.sh`.
+
+Modul `limit` menggunakan mekanisme token bucket. Parameter `--limit 5/second` menentukan laju rata-rata dan `--limit-burst 5` menentukan kapasitas burst awal. Paket yang memenuhi batas diterima, sedangkan echo-request yang tidak memenuhi batas diarahkan ke DROP. Echo-reply dan ping keluar tidak menjadi sasaran aturan ini. Aturan DROP harus diperiksa posisinya agar tidak didahului aturan ACCEPT umum.
+
+```bash
+chmod +x 15-tokyo3.sh
+./15-tokyo3.sh
+iptables -L INPUT -n -v --line-numbers
+```
+
+## Pengujian
+
+Dari Lilith:
+
+```bash
+ping -c 5 -i 3 10.95.4.106
+```
+
+Ping normal diharapkan berhasil. Counter ACCEPT dan DROP pada INPUT digunakan untuk memeriksa paket yang sesuai atau melampaui batas. Ping normal saja belum membuktikan bahwa pembatasan kelebihan paket bekerja.
+
+# Soal 16 : Pencuri yang mencoba setiap pintu
+
+## Tujuan dan konfigurasi
+
+Pada Tokyo3-Core dibuat chain `SCAN_NERV` untuk mencatat dan menolak koneksi TCP dari Dummy-Plug (`10.95.4.51`) menuju port 22, 23, dan 3306. Port 80 dan 8080 tidak dibatasi oleh chain ini. File: `16-tokyo3-scan.sh`.
+
+Target `LOG` mencatat paket dengan prefix `SCAN-NERV: ` dan tidak menghentikan evaluasi aturan. Target `REJECT --reject-with tcp-reset` setelahnya menolak koneksi. Target `RETURN` mengembalikan paket lain ke chain pemanggil.
+
+```bash
+chmod +x 16-tokyo3-scan.sh
+./16-tokyo3-scan.sh
+iptables -S INPUT
+iptables -S SCAN_NERV
+iptables -L SCAN_NERV -n -v --line-numbers
+```
+
+## Pengujian
+
+Dari Dummy-Plug, lakukan pengujian koneksi TCP pada port yang ditentukan dalam jaringan praktikum.
+
+| Port | Target hasil |
+|---|---|
+| 22, 23, 3306 | Ditolak dan dicatat |
+| 80, 8080 | Tidak dibatasi oleh SCAN_NERV; layanan harus aktif |
+
+## Kendala logging
+
+Perintah `journalctl` tidak tersedia pada container. File `/var/log/kern.log` dan `/var/log/syslog` juga tidak ditemukan. Pemeriksaan `dmesg` tidak menampilkan prefix SCAN-NERV. Aturan LOG dan REJECT terlihat pada output `iptables -S SCAN_NERV`, tetapi keberadaan aturan tidak membuktikan bahwa pesan log berhasil tersimpan. Counter dapat menunjukkan paket yang mengenai aturan, bukan isi log aktual.
+
+# Soal 17 : Sihir hitam di jalur paket
+
+## Tujuan dan pendekatan
+
+Soal asli meminta pengalihan transparan koneksi TCP dari Magi-Casper menuju Zeruel agar diterima Pen-Pen, tanpa mengalihkan ping. Pendekatan yang dicoba dalam praktikum ini adalah proxy TCP eksplisit menggunakan `socat` pada Fuyutsuki, dengan file `17-proxy.sh`.
+
+| Node | IP | Peran |
+|---|---|---|
+| Magi-Casper | 10.95.4.58 | Klien |
+| Fuyutsuki | 10.95.4.57 / 10.95.4.110 | Proxy |
+| Pen-Pen | 10.95.3.194 | Penerima TCP 9000 |
+| Zeruel | 10.95.4.82 | Tujuan pembanding |
+
+Proxy eksplisit mendengarkan port 9000 dan meneruskan koneksi yang secara langsung ditujukan kepadanya ke Pen-Pen. Ping menuju Zeruel tetap menggunakan routing biasa.
+
+## Pemeriksaan dan kendala
+
+Listener port 9000 disiapkan pada Zeruel dan Pen-Pen. Pada Zeruel terlihat pesan `Listening on 0.0.0.0 9000`. Percobaan koneksi dari Zeruel menuju Fuyutsuki `10.95.4.110:9000` menghasilkan `Connection refused`. Pemeriksaan listener proxy dan pengujian dari Magi-Casper diperlukan untuk memastikan penerusan berjalan.
+
+```bash
+# Pemeriksaan pada Fuyutsuki
+ip -br addr
+ss -lntp
+# Pemeriksaan ping dari Magi-Casper
+ping -c 3 10.95.4.82
+```
+
+**Batasan:** proxy eksplisit tidak memenuhi ketentuan pengalihan transparan soal asli. Keberhasilan penerusan TCP belum terkonfirmasi dari hasil yang tersedia.
+
+# Soal 18 : Gerbang Monolith dan Radar
+
+## Tujuan dan konfigurasi
+
+Pada Shigeru dibuat firewall stateful untuk melindungi dua subnet sensitif. File: `18-shigeru.sh`.
+
+| Subnet | CIDR | Gateway |
+|---|---|---|
+| Terminal | 10.95.4.56/29 | 10.95.4.57 |
+| Monolith | 10.95.4.80/29 | 10.95.4.81 |
+| Radar | 10.95.4.88/29 | 10.95.4.89 |
+
+Chain `SENSITIVE_ZONE` menerima paket `ESTABLISHED,RELATED` agar balasan koneksi dapat masuk. Paket dengan sumber Monolith atau Radar diizinkan keluar. ICMP echo-request dari Terminal menjadi pengecualian akses masuk. Paket lainnya ditolak dengan `icmp-admin-prohibited`. Chain dipanggil dari FORWARD berdasarkan subnet sumber dan tujuan, sehingga berlaku pada kedua arah komunikasi yang melewati Shigeru.
+
+```bash
+chmod +x 18-shigeru.sh
+./18-shigeru.sh
+iptables -L FORWARD -n -v --line-numbers
+iptables -L SENSITIVE_ZONE -n -v --line-numbers
+```
+
+## Pengujian
+
+| Sumber | Tujuan | Protokol | Target hasil |
+|---|---|---|---|
+| Casper | Zeruel (10.95.4.82) | ICMP | Berhasil |
+| Lilith | Zeruel | ICMP | Ditolak |
+| Zeruel | Lilith (10.95.4.74) | ICMP | Berhasil |
+| Casper | Zeruel | TCP 9000 | Ditolak |
+| Casper | Radar-Array (10.95.4.90) | ICMP | Berhasil |
+| Lilith | Radar-Array | ICMP | Ditolak |
+| Radar-Array | Lilith | ICMP | Berhasil |
+
+Contoh pengujian dari Casper dan Lilith menggunakan `ping -c 4 10.95.4.82`. Pengujian TCP membutuhkan listener aktif sebagai pembanding. Pada backup soal 20, chain SENSITIVE_ZONE tercatat tersimpan. Komunikasi dalam satu LAN yang tidak melewati Shigeru tidak difilter oleh chain FORWARD router ini.
+
+# Soal 19 : Hukuman untuk sang pengkhianat
+
+## Tujuan dan konfigurasi
+
+Armisael (`10.95.4.83`) diisolasi dari komunikasi IPv4 jaringan, tanpa mengubah firewall Zeruel atau Lilith. File: `19-armisael.sh`.
+
+Policy INPUT, OUTPUT, dan FORWARD ditetapkan DROP. Aturan lama pada ketiga chain dibersihkan, kemudian hanya komunikasi melalui interface loopback yang diizinkan. Konfigurasi awal disimpan pada `/root/backup-19.rules` untuk pemulihan jika diperlukan.
+
+```bash
+chmod +x 19-armisael.sh
+./19-armisael.sh
+iptables -L -n -v --line-numbers
+```
+
+## Pengujian
+
+Dari Zeruel, Lilith, atau Shigeru:
+
+```bash
+ping -c 3 10.95.4.83
+```
+
+Dari Armisael:
+
+```bash
+ping -c 3 -W 2 10.95.4.81
+ping -c 3 -W 2 10.95.4.82
+ping -c 3 -W 2 10.95.4.74
+ping -c 3 -W 2 8.8.8.8
+```
+
+Semua koneksi tersebut diharapkan gagal. Dari Zeruel, koneksi menuju Lilith dan Seele diharapkan tetap berjalan sesuai aturan sebelumnya. Pada pemeriksaan setelah pemulihan soal 20, ping Armisael menuju gateway menghasilkan 100% packet loss, sesuai tujuan isolasi.
+
+Isolasi ini berlaku pada IPv4 non-loopback, bukan ARP atau IPv6. Seele merupakan alamat eksternal sehingga pengujian dari console Seele tidak dilakukan.
+
+# Soal 20 : Uji kebakaran Geofront
+
+## Tujuan dan pemilihan node
+
+Menyimpan konfigurasi firewall dan routing, menguji penghapusan serta pemulihan konfigurasi, dan mengulangi pemulihan sebanyak dua kali. Tiga node yang dipilih adalah Shigeru (router), Magi-Balthasar (host), dan Armisael (host). File: `20-backup-restore.sh`.
+
+## Mekanisme konfigurasi
+
+| File backup | Fungsi |
+|---|---|
+| `iptables.rules` | Hasil iptables-save |
+| `routes.backup` | Hasil ip route save table main dalam format biner |
+| `routes.txt` | Salinan routing dalam format teks untuk verifikasi |
+
+Script memiliki empat mode: `save` untuk backup, `flush` untuk membersihkan aturan dan routing tabel main, `restore` untuk memulihkan konfigurasi, dan `verify` untuk membandingkan konfigurasi. Versi terakhir mempertahankan default policy ketika flush, memeriksa keberadaan backup, dan menggunakan `set -e` untuk menghentikan script jika terjadi kesalahan.
+
+## Pelaksanaan backup
+
+Pada console masing-masing node:
+
+```bash
+# Shigeru
+./20-backup-restore.sh save Shigeru
+# Magi-Balthasar
+./20-backup-restore.sh save Magi-Balthasar
+# Armisael
+./20-backup-restore.sh save Armisael
+```
+
+Backup tersimpan di `/root/backup-Shigeru`, `/root/backup-Magi-Balthasar`, dan `/root/backup-Armisael`. Tahap backup ketiganya berhasil berdasarkan screenshot praktikum.
+
+## Pemulihan dan verifikasi
+
+Pengujian penghapusan dilakukan pada console GNS3, bukan melalui SSH, dengan urutan backup, penghapusan, pemulihan, dan verifikasi. Siklus pemulihan ditargetkan dua kali pada setiap node. Perintah restore menggunakan `iptables-restore` dan `ip route restore` untuk membaca file backup masing-masing.
+
+Perbandingan firewall awal menghasilkan perbedaan karena counter paket dan byte dapat berubah. Pemeriksaan diperbaiki dengan mengabaikan komentar timestamp dan counter, tanpa mengabaikan isi aturan maupun policy.
+
+Contoh pemeriksaan pada Shigeru (gunakan nama backup masing-masing pada node lain):
+
+```bash
+B=/root/backup-Shigeru
+if [ -s "$B/iptables.rules" ] && [ -f "$B/routes.txt" ]; then
+    iptables-save > "$B/iptables-current.rules" &&
+    diff -u \
+      <(sed -E '/^#/d; s/\[[0-9]+:[0-9]+\]/[0:0]/g' "$B/iptables.rules") \
+      <(sed -E '/^#/d; s/\[[0-9]+:[0-9]+\]/[0:0]/g' "$B/iptables-current.rules")
+    ip route show table main > "$B/routes-current.txt" &&
+    diff -u "$B/routes.txt" "$B/routes-current.txt"
+else
+    echo "Backup tidak tersedia"
+fi
+```
+
+## Kendala dan penyelesaian
+
+- Console Shigeru sempat kehilangan koneksi dan menampilkan layar hitam meskipun node berstatus hijau. Pemeriksaan console dilakukan tanpa menghapus node.
+- Command Shigeru sempat dijalankan pada Makoto sehingga file backup tidak ditemukan. Verifikasi yang membandingkan dua input kosong tidak dianggap sebagai bukti keberhasilan.
+- Pada Armisael muncul `RTNETLINK answers: No such device` ketika memulihkan routing biner. Salah satu kemungkinan adalah perubahan indeks interface, tetapi penyebab pastinya belum terkonfirmasi. Pemeriksaan routing berbasis teks kemudian menunjukkan konfigurasi sesuai backup.
+
+## Hasil pemeriksaan akhir
+
+| Node | Kondisi akhir yang dilaporkan |
+|---|---|
+| Shigeru | Routing kembali sesuai dan koneksi ke Gendou dapat diuji |
+| Magi-Balthasar | Routing kembali sesuai dan akses gateway dapat diuji |
+| Armisael | Routing sesuai backup, policy DROP kembali aktif, ping gateway gagal sesuai tujuan |
+
+Setelah pemeriksaan tambahan, ketiga node dilaporkan berhasil diperiksa dan screenshot telah diambil. Namun, bukti terpisah dua siklus pemulihan tanpa error belum tersedia dalam percakapan. Screenshot kondisi akhir tidak dengan sendirinya membuktikan kedua siklus tersebut. Backup ini mencakup firewall IPv4 dan routing tabel main, bukan listener, IPv6, atau seluruh konfigurasi sistem.
+
