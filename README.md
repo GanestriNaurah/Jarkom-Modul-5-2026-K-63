@@ -2741,18 +2741,6 @@ ping -c 4 10.95.4.65
 
 Hasil pemeriksaan menunjukkan bahwa konfigurasi IP address dan default gateway tetap tersedia setelah restart.
 
-![alt text](image.png)
-
-![alt text](image-1.png)
-
-![alt text](image-2.png)
-
-![alt text](image-3.png)
-
-![alt text](image-4.png)
-
-![alt text](image-5.png)
-
 # Soal 7
 
 Bertujuan mengaktifkan tiga node MAGI, yaitu
@@ -4188,4 +4176,354 @@ NAT1
         v
 Internet (8.8.8.8)
 ```
+
+# Soal 11
+
+Bertujuan untuk mengamankan perangkat Magi-Casper agar tidak dapat diketahui melalui pengujian ping oleh perangkat lain, termasuk perangkat yang berada dalam satu jaringan lokal maupun perangkat dari jaringan berbeda.
+
+Selain itu, praktikum ini bertujuan untuk:
+1. Mengonfigurasi firewall menggunakan iptables pada Magi-Casper.
+2. Memblokir seluruh permintaan ICMP Echo Request yang masuk ke Casper.
+3. Memastikan Casper tetap dapat melakukan ping ke perangkat lain.
+4. Memastikan layanan TCP port 5000 pada Casper tetap berjalan.
+5. Membuktikan bahwa Balthasar dan Lilith tidak dapat melakukan ping ke Casper, sedangkan Casper tetap dapat melakukan ping ke keduanya.
+
+## Topologi dan Informasi Jaringan
+
+Praktikum menggunakan tiga perangkat, yaitu Magi-Casper, Magi-Balthasar, dan Lilith.
+
+Berikut informasi alamat IP masing-masing perangkat:
+
+| Perangkat | Alamat IP | Subnet | Gateway |
+|---|---|---|---|
+| Magi-Casper | 10.95.4.58 | 10.95.4.56/29 | 10.95.4.57 |
+| Magi-Balthasar | 10.95.4.59 | 10.95.4.56/29 | 10.95.4.57 |
+| Magi-Melchior | 10.95.4.60 | 10.95.4.56/29 | 10.95.4.57 |
+| Lilith | 10.95.4.74 | 10.95.4.72/29 | 10.95.4.73 |
+
+Keterangan:
+- Magi-Casper dan Magi-Balthasar berada dalam satu subnet, yaitu `10.95.4.56/29`.
+- Lilith berada pada subnet berbeda, yaitu `10.95.4.72/29`.
+- Casper harus menolak seluruh permintaan ping dari perangkat lain.
+- Casper tetap diperbolehkan mengirimkan paket ICMP ke perangkat lain.
+- Layanan TCP port 5000 pada Casper harus tetap aktif.
+
+## Pemeriksaan Kondisi Awal
+
+Sebelum melakukan konfigurasi firewall, dilakukan pemeriksaan terhadap hostname, alamat IP, aturan firewall, dan layanan TCP pada Casper.
+
+### Pemeriksaan hostname dan alamat IP Casper
+
+Perintah yang digunakan:
+
+```bash
+hostname
+ip -br addr
+```
+
+<img width="475" height="155" alt="image" src="https://github.com/user-attachments/assets/485389e8-437e-40ee-8795-63ac9dd113ec" />
+
+Hasil:
+```text
+Magi-Casper
+
+lo     UNKNOWN  127.0.0.1/8 ::1/128
+eth0   UNKNOWN  10.95.4.58/29
+eth1   UNKNOWN  fe80::42:78ff:fe6e:a101/64
+eth2   UNKNOWN  fe80::42:78ff:fe6e:a102/64
+eth3   UNKNOWN  fe80::42:78ff:fe6e:a103/64
+```
+
+Berdasarkan hasil tersebut, diketahui bahwa:
+- Node yang sedang dikonfigurasi adalah Magi-Casper.
+- Alamat IPv4 Casper adalah `10.95.4.58/29`.
+- Interface `eth0` merupakan interface yang memiliki alamat IPv4 untuk jaringan MAGI.
+
+### Pemeriksaan aturan firewall awal
+
+Perintah:
+
+```bash
+iptables -L INPUT -n -v --line-numbers
+```
+
+<img width="475" height="155" alt="image" src="https://github.com/user-attachments/assets/485389e8-437e-40ee-8795-63ac9dd113ec" />
+
+Hasil:
+```text
+Chain INPUT (policy ACCEPT 28 packets, 2055 bytes)
+
+num  pkts bytes target  prot opt in out source      destination
+```
+
+Hasil pemeriksaan menunjukkan bahwa:
+- Policy INPUT masih menggunakan ACCEPT.
+- Belum terdapat aturan firewall untuk memblokir paket ICMP.
+- Semua paket yang masuk masih diizinkan secara default.
+
+Dengan kondisi tersebut, perangkat lain masih dapat melakukan ping ke Casper.
+
+### Pemeriksaan layanan TCP port 5000
+
+Perintah:
+
+```bash
+ss -lntp | grep ':5000'
+```
+
+<img width="475" height="155" alt="image" src="https://github.com/user-attachments/assets/485389e8-437e-40ee-8795-63ac9dd113ec" />
+
+Pada pemeriksaan awal, tidak ditemukan output yang menunjukkan bahwa layanan TCP port 5000 sedang berjalan.
+
+Oleh karena itu, layanan TCP port 5000 perlu diaktifkan kembali sebelum pengujian akhir.
+
+## Pengujian Koneksi Sebelum Konfigurasi
+
+Sebelum menerapkan firewall, dilakukan pengujian ping dari Balthasar dan Lilith menuju Casper.
+
+### Pengujian dari Magi-Balthasar
+
+Perintah:
+
+```bash
+ping -c 4 10.95.4.58
+```
+
+<img width="407" height="109" alt="image-1" src="https://github.com/user-attachments/assets/c9e24bb6-0cd1-4d12-b947-3e65aad4b995" />
+
+Hasil:
+```text
+4 packets transmitted, 4 received, 0% packet loss
+```
+
+Hasil tersebut menunjukkan bahwa Balthasar masih dapat melakukan ping ke Casper.
+
+### Pengujian dari Lilith
+
+Perintah:
+
+```bash
+ping -c 4 10.95.4.58
+```
+
+<img width="415" height="117" alt="image-2" src="https://github.com/user-attachments/assets/0f0e43bc-d28b-47ef-9e37-e21c7611b913" />
+
+Hasil:
+```text
+4 packets transmitted, 4 received, 0% packet loss
+```
+
+Hasil tersebut menunjukkan bahwa Lilith juga masih dapat melakukan ping ke Casper.
+
+Dengan demikian, sebelum konfigurasi firewall diterapkan, Casper masih dapat ditemukan melalui pengujian ICMP dari jaringan lokal maupun jaringan berbeda.
+
+## Konfigurasi Firewall pada Magi-Casper
+
+Untuk memenuhi persyaratan soal, dilakukan konfigurasi firewall menggunakan iptables.
+
+Aturan yang digunakan adalah:
+
+```bash
+iptables -A INPUT -p icmp --icmp-type echo-request -j DROP
+```
+
+<img width="518" height="92" alt="image-3" src="https://github.com/user-attachments/assets/b549196a-9512-423d-9e94-617eaf9f77df" />
+
+Perintah tersebut dijalankan pada console Magi-Casper.
+
+Penjelasan setiap bagian perintah:
+
+| Bagian perintah | Fungsi |
+|---|---|
+| `iptables` | Mengelola aturan firewall Linux |
+| `-A INPUT` | Menambahkan aturan pada chain INPUT |
+| `-p icmp` | Memilih paket dengan protokol ICMP |
+| `--icmp-type echo-request` | Memilih paket permintaan ping |
+| `-j DROP` | Membuang paket yang cocok dengan aturan |
+
+Aturan tersebut menyebabkan seluruh paket ICMP Echo Request yang masuk ke Casper dibuang.
+
+Dengan demikian, perangkat lain tidak akan mendapatkan balasan ketika mencoba melakukan ping ke Casper.
+
+Namun, aturan tersebut tidak memblokir:
+- Paket ICMP Echo Request yang dikirim oleh Casper.
+- Paket balasan ICMP Echo Reply yang diterima Casper.
+- Koneksi TCP, termasuk layanan pada port 5000.
+
+Hal ini karena aturan hanya diterapkan pada paket ICMP Echo Request yang masuk melalui chain INPUT.
+
+## Pemeriksaan Aturan Firewall Setelah Konfigurasi
+
+Setelah aturan ditambahkan, dilakukan pemeriksaan menggunakan:
+
+```bash
+iptables -L INPUT -n -v --line-numbers
+```
+
+<img width="518" height="92" alt="image-3" src="https://github.com/user-attachments/assets/b549196a-9512-423d-9e94-617eaf9f77df" />
+
+Hasil:
+```text
+Chain INPUT (policy ACCEPT 36 packets, 2727 bytes)
+
+num  pkts bytes target  prot opt in out source      destination
+1    0    0     DROP    icmp -- *  *   0.0.0.0/0   0.0.0.0/0
+                                      icmptype 8
+```
+
+Berdasarkan hasil tersebut, aturan DROP berhasil ditambahkan pada chain INPUT dengan nomor aturan 1.
+
+Keterangan `icmptype 8` menunjukkan bahwa aturan tersebut berlaku untuk ICMP Echo Request, yaitu paket yang digunakan ketika perangkat melakukan ping.
+
+Dengan konfigurasi tersebut, Casper tidak akan memberikan respons terhadap permintaan ping dari perangkat lain.
+
+## Mengaktifkan Layanan TCP Port 5000
+
+Selain mengamankan Casper dari ping masuk, soal juga mensyaratkan bahwa layanan TCP port 5000 harus tetap hidup.
+
+Untuk mengaktifkan layanan tersebut, digunakan perintah:
+
+```bash
+nc.traditional -l -p 5000 &
+```
+
+<img width="455" height="64" alt="image-4" src="https://github.com/user-attachments/assets/b2f2d521-79e7-4849-840d-9009e45662a5" />
+
+Keterangan:
+- `nc.traditional` digunakan untuk menjalankan layanan menggunakan Netcat Traditional.
+- `-l` mengaktifkan mode listener atau menunggu koneksi masuk.
+- `-p 5000` menentukan port yang digunakan, yaitu port 5000.
+- `&` menjalankan proses di background sehingga console dapat digunakan kembali.
+
+Setelah perintah dijalankan, dilakukan pemeriksaan menggunakan:
+
+```bash
+ss -lntp | grep ':5000'
+```
+
+Hasil:
+```text
+LISTEN 0 1 0.0.0.0:5000 0.0.0.0:* users:(("nc.traditional",pid=187,fd=3))
+```
+
+<img width="455" height="64" alt="image-4" src="https://github.com/user-attachments/assets/b2f2d521-79e7-4849-840d-9009e45662a5" />
+
+Hasil tersebut menunjukkan bahwa:
+- Port TCP 5000 berada dalam kondisi LISTEN.
+- Layanan mendengarkan koneksi pada seluruh alamat IPv4 (`0.0.0.0`).
+- Proses Netcat Traditional berhasil berjalan dengan PID 187.
+
+Dengan demikian, layanan TCP port 5000 tetap aktif meskipun firewall telah dikonfigurasi untuk memblokir ping masuk.
+
+## Pengujian Setelah Konfigurasi Firewall
+
+Setelah konfigurasi selesai, dilakukan pengujian dari kedua arah untuk memastikan bahwa firewall bekerja sesuai persyaratan.
+
+### Pengujian ping dari Magi-Balthasar ke Casper
+
+Pada console Magi-Balthasar dijalankan:
+
+```bash
+ping -c 4 10.95.4.58
+```
+
+<img width="395" height="72" alt="image-5" src="https://github.com/user-attachments/assets/c2d842e6-54ce-4bfe-9ac5-8a86213dc8f0" />
+
+Hasil:
+```text
+4 packets transmitted, 0 received, 100% packet loss
+```
+
+Hasil tersebut menunjukkan bahwa Balthasar tidak dapat melakukan ping ke Casper.
+
+Paket ICMP Echo Request yang dikirimkan Balthasar berhasil diblokir oleh aturan DROP pada chain INPUT Casper.
+
+### Pengujian ping dari Lilith ke Casper
+
+Pada console Lilith dijalankan:
+
+```bash
+ping -c 4 10.95.4.58
+```
+
+<img width="399" height="71" alt="image-6" src="https://github.com/user-attachments/assets/38a8ffd0-c7e9-4742-8823-1378e9a3d03b" />
+
+Hasil:
+```text
+4 packets transmitted, 0 received, 100% packet loss
+```
+
+Hasil tersebut menunjukkan bahwa Lilith juga tidak dapat melakukan ping ke Casper.
+
+Walaupun Lilith berada pada jaringan berbeda, paket ICMP Echo Request yang sampai ke Casper tetap diblokir oleh aturan firewall yang sama.
+
+### Pengujian ping dari Casper ke Balthasar
+
+Pada console Magi-Casper dijalankan:
+
+```bash
+ping -c 4 10.95.4.59
+```
+
+<img width="440" height="229" alt="image-7" src="https://github.com/user-attachments/assets/c63b14f7-dde9-4324-800d-b18a3737f743" />
+
+Hasil:
+```text
+4 packets transmitted, 4 received, 0% packet loss
+```
+
+Hasil tersebut membuktikan bahwa Casper tetap dapat melakukan ping ke Balthasar.
+
+Hal ini terjadi karena aturan firewall hanya memblokir paket ICMP Echo Request yang masuk ke Casper, bukan paket yang dikirimkan oleh Casper.
+
+### Pengujian ping dari Casper ke Lilith
+
+Pada console Magi-Casper dijalankan:
+
+```bash
+ping -c 4 10.95.4.74
+```
+
+<img width="440" height="229" alt="image-8" src="https://github.com/user-attachments/assets/b068ab63-36c5-46b1-901d-a492c740d96c" />
+
+Hasil:
+```text
+4 packets transmitted, 4 received, 0% packet loss
+```
+
+Hasil tersebut membuktikan bahwa Casper tetap dapat melakukan ping ke Lilith meskipun Lilith berada pada jaringan berbeda.
+
+Dengan demikian, Casper tetap dapat melakukan komunikasi keluar ke perangkat lain.
+
+### Pengujian layanan TCP port 5000
+
+Setelah seluruh pengujian ping dilakukan, layanan TCP port 5000 diperiksa kembali menggunakan:
+
+```bash
+ss -lntp | grep ':5000'
+```
+
+<img width="494" height="46" alt="image-9" src="https://github.com/user-attachments/assets/f4b9647e-4b3d-4bd6-b55b-6efbe92c1ee1" />
+
+Hasil:
+```text
+LISTEN 0 1 0.0.0.0:5000 0.0.0.0:* users:(("nc.traditional",pid=187,fd=3))
+```
+
+Hasil tersebut menunjukkan bahwa layanan TCP port 5000 masih berada dalam kondisi LISTEN.
+
+Dengan demikian, penerapan firewall ICMP tidak mengganggu layanan TCP port 5000 pada Casper.
+
+## Rekapitulasi Hasil Pengujian
+
+Berikut rekapitulasi seluruh pengujian yang telah dilakukan:
+
+| No. | Pengujian | Hasil | Keterangan |
+|---|---|---|---|
+| 1 | Balthasar → Casper | 100% packet loss | Ping diblokir |
+| 2 | Lilith → Casper | 100% packet loss | Ping diblokir |
+| 3 | Casper → Balthasar | 4/4 berhasil | Ping diizinkan |
+| 4 | Casper → Lilith | 4/4 berhasil | Ping diizinkan |
+| 5 | TCP port 5000 Casper | LISTEN | Layanan aktif |
+
 
