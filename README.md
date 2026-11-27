@@ -3411,3 +3411,373 @@ nc -zvw2 10.95.4.106 22
 <img width="410" height="27" alt="8 - tes tokyo 22" src="https://github.com/user-attachments/assets/ebbf7220-f774-4753-9692-d67266b660d5" />
 
 Koneksi ke port 22 Tokyo3-Core juga langsung ditolak. Hal ini menunjukkan bahwa port tersebut tidak menyediakan layanan TCP.
+
+# Soal 9
+
+Pada tugas Nomor 9 dilakukan simulasi sabotase routing pada router Shigeru menggunakan script `break_routing.sh`.
+
+Sabotase menyebabkan Lilith tidak dapat berkomunikasi dengan Armisael, meskipun Armisael masih dapat melakukan ping ke gatewaynya sendiri.
+
+Tujuan pengerjaan ini adalah:
+
+1. Menjalankan script sabotase `break_routing.sh` pada router Shigeru.
+2. Mengidentifikasi seluruh perubahan konfigurasi yang menyebabkan gangguan routing.
+3. Memperbaiki konfigurasi IP forwarding, routing table, dan policy routing.
+4. Mengembalikan jalur komunikasi antarjaringan.
+5. Membuktikan bahwa Lilith dapat melakukan ping ke Armisael setelah perbaikan.
+
+## Informasi Topologi dan IP Address
+
+Pengujian melibatkan tiga node utama, yaitu Shigeru, Lilith, dan Armisael.
+
+| Node | IP Address | Gateway | Keterangan |
+|---|---|---|---|
+| Shigeru eth0 | 10.95.4.114/30 | 10.95.4.113 | Link menuju Gendo |
+| Shigeru eth1 | 10.95.4.81/29 | - | Jaringan Monolith |
+| Shigeru eth2 | 10.95.4.137/30 | - | Link menuju Makoto |
+| Lilith | 10.95.4.74/29 | 10.95.4.73 | Client pengujian |
+| Armisael | 10.95.4.83/29 | 10.95.4.81 | Host di jaringan Monolith |
+
+Hubungan jaringan:
+
+- Shigeru terhubung ke Gendo melalui `eth0`.
+- Shigeru terhubung ke jaringan Monolith melalui `eth1`.
+- Shigeru terhubung ke Makoto melalui `eth2`.
+- Armisael berada di jaringan Monolith dan menggunakan Shigeru sebagai gateway.
+- Lilith berada di jaringan Dogma dan mengakses Armisael melalui jaringan antarrouter.
+
+## Kondisi Konfigurasi Sebelum Sabotase
+
+Sebelum sabotase, konfigurasi Shigeru adalah sebagai berikut.
+
+| Interface | IP Address | Fungsi |
+|---|---|---|
+| eth0 | 10.95.4.114/30 | Terhubung ke Gendo |
+| eth1 | 10.95.4.81/29 | Jaringan Monolith |
+| eth2 | 10.95.4.137/30 | Terhubung ke Makoto |
+
+Konfigurasi routing normal Shigeru:
+
+```bash
+default via 10.95.4.113 dev eth0
+10.95.4.80/29 dev eth1 proto kernel scope link src 10.95.4.81
+10.95.4.88/29 via 10.95.4.138 dev eth2
+```
+
+IP forwarding seharusnya bernilai `1` agar Shigeru dapat meneruskan paket dari satu jaringan menuju jaringan lainnya.
+
+## Pelaksanaan Script Sabotase
+
+### Memastikan Node dan Hak Akses
+
+Script sabotase hanya boleh dijalankan pada router Shigeru. Oleh karena itu, dilakukan pemeriksaan hostname dan hak akses root terlebih dahulu.
+
+Perintah:
+
+```bash
+hostname
+id -u
+```
+
+<img width="179" height="49" alt="9 - hostname" src="https://github.com/user-attachments/assets/b2170c65-e9b6-45b6-9b15-ae8eb1a3b587" />
+
+- Hostname menunjukkan `Shigeru`, sesuai dengan node yang ditentukan.
+- Nilai `id -u` adalah `0`, yang berarti perintah dijalankan menggunakan hak akses root.
+
+### Menjalankan Script Sabotase
+
+Script `break_routing.sh` dijalankan pada Shigeru.
+
+Perintah:
+
+```bash
+chmod +x /root/break_routing.sh
+sh /root/break_routing.sh
+```
+
+<img width="277" height="36" alt="9 - break" src="https://github.com/user-attachments/assets/47b061f7-b236-47aa-b278-31b6adef2802" />
+
+Pesan tersebut menunjukkan bahwa script sabotase berhasil dijalankan.
+
+## Identifikasi Kerusakan Setelah Sabotase
+
+Setelah script berhasil dijalankan, dilakukan pemeriksaan terhadap interface, routing table, policy routing, dan IP forwarding.
+
+### Memeriksa IP Address Interface
+
+Perintah:
+
+```bash
+ip -br addr
+```
+
+<img width="461" height="77" alt="9 - ip addr after" src="https://github.com/user-attachments/assets/f9a00ded-d9b3-4387-b5b0-bdf53ebab7a1" />
+
+IP address pada tiga interface utama Shigeru masih sesuai dengan konfigurasi awal. Tidak ditemukan perubahan alamat IP pada `eth0`, `eth1`, maupun `eth2`.
+
+Dengan demikian, kerusakan utama bukan berasal dari perubahan IP address interface.
+
+### Memeriksa Routing Table
+
+Perintah:
+
+```bash
+ip route
+```
+
+<img width="439" height="86" alt="9 - ip route after" src="https://github.com/user-attachments/assets/0998e211-bcbd-4c6a-b79b-015dd9a358b3" />
+
+Ditemukan dua kerusakan pada routing table.
+
+**Kerusakan pertama: Default gateway diubah.**
+
+Sebelum sabotase:
+
+```bash
+default via 10.95.4.113 dev eth0
+```
+
+Setelah sabotase:
+
+```bash
+default via 10.95.4.138 dev eth2
+```
+
+Default gateway seharusnya mengarah ke Gendo melalui `eth0`, yaitu `10.95.4.113`.
+
+Namun, script mengubah default gateway menjadi `10.95.4.138` melalui `eth2`, yang merupakan alamat Makoto.
+
+Perubahan tersebut menyebabkan jalur utama paket menuju jaringan di luar Shigeru menjadi salah.
+
+**Kerusakan kedua: Blackhole route ditambahkan.**
+
+Ditemukan konfigurasi:
+
+```bash
+blackhole 10.95.4.72/29
+```
+
+Jaringan `10.95.4.72/29` merupakan jaringan Dogma tempat Lilith berada.
+
+Blackhole route menyebabkan seluruh paket yang memiliki tujuan ke jaringan tersebut langsung dibuang oleh router.
+
+Akibatnya, paket balasan dari Armisael menuju Lilith tidak dapat diteruskan melalui Shigeru.
+
+### Memeriksa Policy Routing
+
+Perintah:
+
+```bash
+ip rule show
+```
+
+<img width="251" height="62" alt="9 - ip rule after" src="https://github.com/user-attachments/assets/3992ea41-3598-494b-aec9-fa1c17ba7b8b" />
+
+Ditemukan policy routing tambahan:
+
+```bash
+90: from all iif eth1 lookup 100
+```
+
+Rule tersebut berarti setiap paket yang masuk melalui interface `eth1` akan menggunakan routing table 100.
+
+Karena `eth1` merupakan interface jaringan Monolith tempat Armisael berada, paket balasan dari Armisael akan terkena aturan ini.
+
+### Memeriksa Routing Table 100
+
+Berdasarkan isi script sabotase, routing table 100 diisi dengan:
+
+```bash
+ip route add unreachable default table 100
+```
+
+Artinya, seluruh tujuan yang tidak memiliki rute lebih spesifik dalam tabel tersebut akan dianggap tidak dapat dijangkau.
+
+Karena policy routing mengarahkan paket masuk dari `eth1` ke tabel 100, paket balasan dari Armisael akan ditolak oleh aturan `unreachable default`.
+
+### Memeriksa IP Forwarding
+
+Perintah:
+
+```bash
+sysctl net.ipv4.ip_forward
+```
+
+<img width="278" height="28" alt="9 - sysctl after" src="https://github.com/user-attachments/assets/a5f2abff-45a1-4d96-9fba-0e7befcad09d" />
+
+Ditemukan kerusakan tambahan, yaitu IP forwarding dimatikan.
+
+IP forwarding diperlukan agar router dapat meneruskan paket dari satu interface ke interface lainnya.
+
+Ketika nilainya `0`, Shigeru tidak dapat meneruskan paket antarjaringan meskipun interface dan routing table memiliki konfigurasi tertentu.
+
+### Ringkasan Penyebab Sabotase
+
+Berdasarkan hasil pemeriksaan, ditemukan empat penyebab utama gangguan komunikasi.
+
+| No. | Penyebab | Kondisi setelah sabotase | Dampak |
+|---|---|---|---|
+| 1 | IP forwarding dimatikan | `net.ipv4.ip_forward = 0` | Router tidak meneruskan paket antarjaringan |
+| 2 | Default gateway diubah | Via 10.95.4.138 melalui eth2 | Jalur utama menuju Gendo menjadi salah |
+| 3 | Blackhole route ditambahkan | `10.95.4.72/29` | Paket menuju jaringan Dogma dibuang |
+| 4 | Policy routing ditambahkan | `iif eth1 lookup 100` | Paket dari Monolith diarahkan ke tabel routing yang bermasalah |
+
+Keempat kerusakan tersebut saling memengaruhi dan menyebabkan Lilith tidak dapat berkomunikasi dengan Armisael.
+
+## Proses Perbaikan Konfigurasi
+
+Setelah seluruh penyebab diketahui, dilakukan perbaikan pada router Shigeru.
+
+### Mengaktifkan Kembali IP Forwarding
+
+Perintah:
+
+```bash
+sysctl -w net.ipv4.ip_forward=1
+```
+
+IP forwarding diaktifkan kembali agar Shigeru dapat meneruskan paket antarjaringan.
+
+### Menghapus Blackhole Route
+
+Perintah:
+
+```bash
+ip route del blackhole 10.95.4.72/29
+```
+
+Perintah tersebut menghapus blackhole route yang sebelumnya membuang paket menuju jaringan Dogma.
+
+Setelah dihapus, paket menuju jaringan `10.95.4.72/29` tidak lagi dibuang oleh aturan tersebut.
+
+### Menghapus Policy Routing Priority 90
+
+Perintah:
+
+```bash
+ip rule del priority 90
+```
+
+Perintah tersebut menghapus aturan policy routing yang mengarahkan paket dari `eth1` ke routing table 100.
+
+Dengan demikian, paket dari jaringan Monolith kembali menggunakan routing table utama.
+
+### Membersihkan Routing Table 100
+
+Perintah:
+
+```bash
+ip route flush table 100
+```
+
+Seluruh entri routing pada tabel 100 dihapus agar tidak ada lagi rute `unreachable default` yang tersisa.
+
+### Mengembalikan Default Gateway
+
+Perintah:
+
+```bash
+ip route replace default via 10.95.4.113 dev eth0
+```
+
+Default gateway dikembalikan menuju Gendo melalui `eth0`.
+
+Alamat `10.95.4.113` merupakan alamat interface Gendo pada link Gendo–Shigeru.
+
+### Memastikan Route Radar Tetap Ada
+
+Perintah:
+
+```bash
+ip route replace 10.95.4.88/29 via 10.95.4.138 dev eth2
+```
+
+Jaringan Radar tetap dapat dijangkau melalui Makoto.
+
+Alamat `10.95.4.88/29` merupakan jaringan Radar, sedangkan `10.95.4.138` merupakan alamat Makoto pada link Shigeru–Makoto.
+
+## Verifikasi Setelah Perbaikan
+
+Setelah seluruh perbaikan dilakukan, dilakukan pemeriksaan ulang terhadap konfigurasi Shigeru.
+
+### Memeriksa IP Forwarding
+
+Perintah:
+
+```bash
+sysctl net.ipv4.ip_forward
+```
+
+<img width="275" height="23" alt="9 - sysctl perbaikan" src="https://github.com/user-attachments/assets/00ffb82d-331d-441a-8e18-143ca8beb74e" />
+
+IP forwarding sudah kembali aktif.
+
+### Memeriksa Routing Table
+
+Perintah:
+
+```bash
+ip route
+```
+
+<img width="410" height="77" alt="9 - ip route perbaikan" src="https://github.com/user-attachments/assets/4aac7236-6b93-40aa-9d31-d29290d79e2b" />
+
+Keterangan:
+- Default gateway sudah kembali menuju Gendo.
+- Jaringan Monolith tetap terhubung langsung melalui `eth1`.
+- Jaringan Radar tetap diarahkan melalui Makoto.
+- Blackhole route menuju jaringan Dogma sudah tidak ditemukan.
+
+### Memeriksa Policy Routing
+
+Perintah:
+
+```bash
+ip rule show
+```
+
+<img width="206" height="47" alt="9 - ip rule perbaikan" src="https://github.com/user-attachments/assets/19564a6f-106d-4dac-9dae-7433fca5cc4d" />
+
+Policy rule priority 90 sudah tidak ditemukan. Paket kembali menggunakan routing table utama.
+
+### Memeriksa Routing Table 100
+
+Perintah:
+
+```bash
+ip route show table 100
+```
+
+<img width="242" height="15" alt="9 - table 100" src="https://github.com/user-attachments/assets/298dc449-fd90-4cfa-ab89-d63e614734d2" />
+
+Tidak ada output.
+
+Routing table 100 sudah kosong dan tidak lagi memiliki aturan `unreachable default`.
+
+## Pengujian Konektivitas Lilith ke Armisael
+
+Setelah konfigurasi Shigeru kembali normal, dilakukan pengujian dari Lilith menuju Armisael.
+
+IP address tujuan:
+
+```text
+Armisael = 10.95.4.83
+```
+
+Perintah yang dijalankan pada Lilith:
+
+```bash
+ping -c 4 10.95.4.83
+```
+
+<img width="395" height="121" alt="9 - ping" src="https://github.com/user-attachments/assets/265167fb-9e10-4720-b01b-07e4324dc274" />
+
+Hasil pengujian menunjukkan bahwa:
+
+- Lilith berhasil mengirimkan empat paket ICMP menuju Armisael.
+- Armisael berhasil memberikan balasan terhadap seluruh paket.
+- Tidak terdapat packet loss.
+- Waktu rata-rata respons adalah 1,213 ms.
+
+Dengan demikian, komunikasi dari Lilith menuju Armisael sudah kembali normal setelah konfigurasi routing pada Shigeru diperbaiki.
+
