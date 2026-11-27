@@ -3162,3 +3162,252 @@ cat /tmp/melchior.log
 ```
 
 <img width="502" height="39" alt="7 - pesan melchior" src="https://github.com/user-attachments/assets/0c51a01e-e863-4177-a1de-33613a9bccba" />
+
+
+# Soal 8
+
+Dilakukan konfigurasi layanan TCP pada dua node, yaitu Pen-Pen dan Tokyo3-Core. Kedua node harus dapat memberikan respons tertentu ketika menerima koneksi dari Lilith.
+
+Tujuan pengerjaan ini adalah:
+1. Mengaktifkan layanan TCP pada port 80 di Pen-Pen.
+2. Mengaktifkan layanan TCP pada port 80 dan 8080 di Tokyo3-Core.
+3. Memastikan setiap port memberikan respons sesuai ketentuan soal.
+4. Menguji koneksi dari Lilith menggunakan Netcat (`nc`).
+5. Memastikan port yang tidak memiliki layanan, seperti port 22, langsung menolak koneksi dan tidak menggantung.
+
+## Topologi dan Informasi IP Address
+
+Pengujian dilakukan menggunakan tiga node, yaitu Pen-Pen, Tokyo3-Core, dan Lilith.
+
+| Node | IP Address | Gateway | Fungsi |
+|---|---|---|---|
+| Pen-Pen | 10.95.3.194/27 | 10.95.3.193 | Server port 80 |
+| Tokyo3-Core | 10.95.4.106/30 | 10.95.4.105 | Server port 80 dan 8080 |
+| Lilith | 10.95.4.74/29 | 10.95.4.73 | Client untuk pengujian |
+
+## Ketentuan Layanan
+
+Layanan TCP yang harus dijalankan adalah sebagai berikut.
+
+| Node | Port TCP | Respons |
+|---|---:|---|
+| Pen-Pen | 80 | Welcome to Pen-Pen |
+| Tokyo3-Core | 80 | Welcome to Tokyo3-Core |
+| Tokyo3-Core | 8080 | syifa imutz |
+
+Selain itu, port 22 digunakan sebagai contoh port yang tidak memiliki layanan. Koneksi ke port tersebut harus langsung gagal.
+
+## Konfigurasi Pen-Pen
+
+### Pemeriksaan hostname dan Netcat
+
+Pertama, dilakukan pemeriksaan hostname dan ketersediaan perintah Netcat pada Pen-Pen.
+
+Perintah:
+
+```bash
+hostname
+command -v nc.traditional
+command -v nc
+```
+
+Hasil pemeriksaan:
+
+<img width="272" height="59" alt="8 - hostname pen" src="https://github.com/user-attachments/assets/21752668-5f35-44d4-8325-f1a47dc5c8e8" />
+
+Berdasarkan hasil tersebut, hostname Pen-Pen sudah sesuai. Perintah `nc.traditional` tidak tersedia, tetapi Netcat biasa tersedia pada `/usr/bin/nc`. Oleh karena itu, layanan dijalankan menggunakan `nc`.
+
+### Membuat script layanan
+
+Dibuat file `/root/penpen.sh` untuk menjalankan layanan TCP pada port 80.
+
+Perintah:
+
+```bash
+cat > /root/penpen.sh <<'EOF'
+#!/bin/bash
+while true; do
+    printf "Welcome to Pen-Pen\n" | nc -l -p 80
+done
+EOF
+```
+
+Penjelasan:
+- `#!/bin/bash` menentukan interpreter yang digunakan.
+- `while true` membuat layanan berjalan terus-menerus.
+- `printf` menyiapkan pesan respons.
+- `nc -l -p 80` membuat Netcat mendengarkan koneksi TCP pada port 80.
+- Setelah satu koneksi selesai, perulangan menjalankan listener kembali.
+
+### Menjalankan layanan
+
+Script diberikan izin eksekusi dan dijalankan di background.
+
+```bash
+chmod +x /root/penpen.sh
+nohup /root/penpen.sh > /tmp/penpen-service.log 2>&1 &
+```
+
+<img width="360" height="39" alt="8 - layanan pen" src="https://github.com/user-attachments/assets/d68d7cb7-33e1-4eec-92c9-cfcbae5d1f96" />
+
+Keterangan:
+- `chmod +x` memberikan izin eksekusi.
+- `nohup` menjalankan proses agar tetap berjalan setelah terminal ditutup.
+- `&` menjalankan proses di background.
+- Output dan error diarahkan ke `/tmp/penpen-service.log`.
+
+### Memeriksa listener
+
+Perintah:
+
+```bash
+ss -lntp | grep ':80'
+```
+
+<img width="490" height="36" alt="8 - listen pen" src="https://github.com/user-attachments/assets/ff2a91d4-4e94-43ff-b7e2-79fbcd1705d8" />
+
+Hasil tersebut menunjukkan bahwa Pen-Pen sudah mendengarkan koneksi TCP pada port 80.
+
+## Konfigurasi Tokyo3-Core
+
+### Pemeriksaan hostname dan Netcat
+
+Pemeriksaan dilakukan untuk memastikan hostname dan ketersediaan Netcat.
+
+Perintah:
+
+```bash
+hostname
+command -v nc.traditional
+command -v nc
+```
+
+<img width="190" height="56" alt="8 - hostname tokyo" src="https://github.com/user-attachments/assets/9e05475d-86b9-475d-920a-a035490da79f" />
+
+Berdasarkan hasil tersebut, hostname sudah sesuai dan Netcat biasa tersedia pada `/usr/bin/nc`. Dengan demikian, layanan dijalankan menggunakan `nc`.
+
+### Membuat script layanan
+
+Dibuat file `/root/tokyo3.sh` untuk menjalankan dua layanan sekaligus, yaitu port 80 dan 8080.
+
+Perintah:
+
+```bash
+cat > /root/tokyo3.sh <<'EOF'
+#!/bin/bash
+
+while true; do
+    printf "Welcome to Tokyo3-Core\n" | nc -l -p 80
+done &
+
+while true; do
+    printf "syifa imutz\n" | nc -l -p 8080
+done &
+
+wait
+EOF
+```
+
+Penjelasan:
+- Perulangan pertama menjalankan listener TCP pada port 80.
+- Respons yang diberikan adalah `Welcome to Tokyo3-Core`.
+- Perulangan kedua menjalankan listener TCP pada port 8080.
+- Respons yang diberikan adalah `syifa imutz`.
+- `&` membuat kedua layanan berjalan secara paralel.
+- `wait` menjaga proses utama tetap berjalan selama kedua layanan aktif.
+
+### Menjalankan layanan
+
+Perintah:
+
+```bash
+chmod +x /root/tokyo3.sh
+nohup /root/tokyo3.sh > /tmp/tokyo3-service.log 2>&1 &
+```
+
+<img width="349" height="40" alt="8 - layanan tokyo" src="https://github.com/user-attachments/assets/a622f608-ef0d-43b3-b7b8-7d3dd567afdb" />
+
+Script dijalankan di background agar kedua layanan dapat terus menerima koneksi.
+
+### Memeriksa listener
+
+Perintah:
+
+```bash
+ss -lntp | grep -E ':80|:8080'
+```
+
+<img width="506" height="63" alt="8 - listen tokyo" src="https://github.com/user-attachments/assets/aa4918bb-afaa-4bc1-9047-d6ce1a4ef2e0" />
+
+Hasil tersebut membuktikan bahwa Tokyo3-Core sudah mendengarkan koneksi TCP pada port 80 dan 8080.
+
+
+## Pengujian Koneksi dari Lilith
+
+Setelah seluruh layanan aktif, dilakukan pengujian dari node Lilith menggunakan Netcat.
+
+### Pengujian Pen-Pen port 80
+
+Perintah:
+
+```bash
+echo | nc -w 3 10.95.3.194 80
+```
+
+<img width="292" height="24" alt="8 - tes pen" src="https://github.com/user-attachments/assets/288aeb8a-3a1f-4cc2-a00c-4441258341ac" />
+
+Lilith berhasil terhubung ke Pen-Pen pada port 80. Pen-Pen memberikan respons `Welcome to Pen-Pen` sesuai ketentuan soal.
+
+### Pengujian Tokyo3-Core port 80
+
+Perintah:
+
+```bash
+echo | nc -w 3 10.95.4.106 80
+```
+
+<img width="284" height="29" alt="8 - tes tokyo 80" src="https://github.com/user-attachments/assets/548e235b-cc02-4e39-b5a4-6d54e9cf486e" />
+
+Lilith berhasil terhubung ke Tokyo3-Core pada port 80. Respons yang diterima sesuai dengan hostname server.
+
+### Pengujian Tokyo3-Core port 8080
+
+Perintah:
+
+```bash
+echo | nc -w 3 10.95.4.106 8080
+```
+
+<img width="296" height="26" alt="8 - tes tokyo 8080" src="https://github.com/user-attachments/assets/7631f5ad-20d9-4371-abc1-6a8f535f0e08" />
+
+Lilith berhasil terhubung ke Tokyo3-Core pada port 8080 dan menerima pesan `syifa imutz` sesuai ketentuan soal.
+
+## Pengujian Port yang Tidak Dilayani
+
+Selain menguji port yang aktif, dilakukan pengujian terhadap port 22 pada Pen-Pen dan Tokyo3-Core.
+
+Pengujian ini bertujuan memastikan bahwa port yang tidak memiliki layanan langsung menolak koneksi dan tidak membuat client menunggu terlalu lama.
+
+### Pengujian Pen-Pen port 22
+
+Perintah:
+
+```bash
+nc -zvw2 10.95.3.194 22
+```
+
+<img width="409" height="26" alt="8 - tes pen 22" src="https://github.com/user-attachments/assets/b348e86d-9579-4d9c-83e0-6e92ab0da380" />
+
+Koneksi ke port 22 Pen-Pen langsung ditolak karena tidak ada layanan yang mendengarkan pada port tersebut.
+
+### Pengujian Tokyo3-Core port 22
+
+Perintah:
+
+```bash
+nc -zvw2 10.95.4.106 22
+```
+
+<img width="410" height="27" alt="8 - tes tokyo 22" src="https://github.com/user-attachments/assets/ebbf7220-f774-4753-9692-d67266b660d5" />
+
+Koneksi ke port 22 Tokyo3-Core juga langsung ditolak. Hal ini menunjukkan bahwa port tersebut tidak menyediakan layanan TCP.
