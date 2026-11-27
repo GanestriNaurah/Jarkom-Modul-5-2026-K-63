@@ -3781,3 +3781,411 @@ Hasil pengujian menunjukkan bahwa:
 
 Dengan demikian, komunikasi dari Lilith menuju Armisael sudah kembali normal setelah konfigurasi routing pada Shigeru diperbaiki.
 
+# Soal 10
+
+Bertujuan untuk mengidentifikasi dan memperbaiki gangguan Network Address Translation (NAT) pada jaringan Cage yang menyebabkan Unit-01, Unit-02, dan Unit-00 tidak dapat mengakses internet.
+
+Selain itu, ini bertujuan untuk:
+1. Menjalankan script `break_nat.sh` pada router Misato dan Gendo.
+2. Mengidentifikasi seluruh aturan NAT yang menyebabkan gangguan.
+3. Menjelaskan alasan jaringan Cage terdampak, sedangkan jaringan Intel tetap dapat mengakses internet.
+4. Memperbaiki aturan NAT yang mengalami sabotase.
+5. Membuktikan bahwa Unit-01 dapat kembali melakukan ping ke `8.8.8.8`.
+6. Menentukan router yang bertanggung jawab melakukan penerjemahan alamat sumber.
+
+## Topologi dan Informasi Jaringan
+
+Praktikum menggunakan dua jaringan yang menjadi objek pengujian, yaitu Cage dan Intel.
+
+| Perangkat | Alamat IP | Subnet | Gateway |
+|---|---|---|---|
+| Unit-01 | 10.95.4.66 | 10.95.4.64/29 | 10.95.4.65 |
+| Unit-02 | 10.95.4.67 | 10.95.4.64/29 | 10.95.4.65 |
+| Unit-00 | 10.95.4.68 | 10.95.4.64/29 | 10.95.4.65 |
+| Misato (Cage) | 10.95.4.65 | 10.95.4.64/29 | 10.95.4.125 |
+| Spy | 10.95.4.102 | 10.95.4.100/30 | 10.95.4.101 |
+| Gendo | 192.168.122.124 | NAT1 | 192.168.122.1 |
+
+Keterangan:
+- Cage menggunakan subnet `10.95.4.64/29` dan terhubung ke router Misato.
+- Intel menggunakan subnet `10.95.4.100/30` dan terhubung melalui router Kaji.
+- Misato terhubung ke Gendo melalui jaringan `10.95.4.124/30`.
+- Gendo merupakan router utama yang terhubung ke NAT1 melalui interface `eth0`.
+- Seluruh akses internet dari jaringan internal diteruskan melalui Gendo.
+
+## Konfigurasi Awal dan Pelaksanaan Sabotase
+
+Sesuai instruksi soal, script `break_nat.sh` dijalankan pada router Misato dan Gendo. Kedua router menggunakan file script yang sama.
+
+### Menjalankan script pada Misato
+
+Pertama, dilakukan pemeriksaan hostname dan hak akses root.
+
+```bash
+hostname
+id -u
+```
+
+<img width="151" height="52" alt="10 - hostname misato" src="https://github.com/user-attachments/assets/e1b02ee7-d156-4e26-a36b-11bb4ecff3e9" />
+
+Nilai `0` menunjukkan bahwa perintah dijalankan menggunakan hak akses root.
+
+Selanjutnya, script diberikan izin eksekusi dan dijalankan.
+
+```bash
+chmod +x /root/break_nat.sh
+sh /root/break_nat.sh
+```
+
+<img width="261" height="51" alt="10 - break misato" src="https://github.com/user-attachments/assets/e41d30f4-53e2-4a59-9c2a-8e24a3a67972" />
+
+
+### Menjalankan script pada Gendou
+
+Langkah yang sama dilakukan pada router Gendo.
+
+```bash
+hostname
+id -u
+```
+
+<img width="152" height="53" alt="10 - hostname gendou" src="https://github.com/user-attachments/assets/c79b1a6a-1605-4ce1-9289-bdd66e8f820b" />
+
+Kemudian script dijalankan.
+
+```bash
+chmod +x /root/break_nat.sh
+sh /root/break_nat.sh
+```
+
+<img width="282" height="51" alt="10 - break gendou" src="https://github.com/user-attachments/assets/997dc0c8-cb48-40eb-8ef0-40f6d5849b56" />
+
+Dengan demikian, script sabotase berhasil dijalankan pada kedua router.
+
+## Identifikasi Penyebab Kerusakan
+
+Setelah script dijalankan, dilakukan pemeriksaan terhadap IP forwarding, tabel NAT, dan routing pada masing-masing router.
+
+### Pemeriksaan Misato
+
+Pemeriksaan IP forwarding dilakukan menggunakan perintah:
+
+```bash
+sysctl net.ipv4.ip_forward
+```
+
+Hasil:
+```text
+net.ipv4.ip_forward = 1
+```
+
+Hasil tersebut menunjukkan bahwa IP forwarding masih aktif. Dengan demikian, gangguan bukan disebabkan oleh IP forwarding yang dinonaktifkan.
+
+Selanjutnya, dilakukan pemeriksaan aturan NAT:
+
+```bash
+iptables -t nat -L POSTROUTING -n -v --line-numbers
+```
+
+Hasil:
+```text
+Chain POSTROUTING (policy ACCEPT 0 packets, 0 bytes)
+
+num  pkts bytes target  prot opt in out source           destination
+1    0    0     SNAT    all  --  *  eth0 10.95.4.64/29   !10.95.0.0/16
+                                      to:172.31.99.1
+```
+
+Ditemukan aturan SNAT yang menerjemahkan alamat sumber jaringan Cage menjadi `172.31.99.1`.
+
+Aturan tersebut memiliki fungsi:
+- Sumber paket berasal dari `10.95.4.64/29`.
+- Paket keluar melalui interface `eth0` pada Misato.
+- Tujuan paket bukan bagian dari jaringan internal `10.95.0.0/16`.
+- Alamat sumber paket diubah menjadi `172.31.99.1`.
+
+Aturan tersebut merupakan penyebab kerusakan pertama.
+
+Seharusnya, Misato hanya meneruskan paket dari Cage menuju Gendo tanpa melakukan penerjemahan alamat sumber. Penerjemahan alamat sumber seharusnya dilakukan di Gendo ketika paket keluar menuju NAT1.
+
+Pemeriksaan routing dilakukan menggunakan:
+
+```bash
+ip route
+```
+
+Hasil:
+```text
+default via 10.95.4.125 dev eth0
+10.95.4.64/29 dev eth1 proto kernel scope link src 10.95.4.65
+10.95.4.124/30 dev eth0 proto kernel scope link src 10.95.4.126
+```
+
+Routing Misato masih sesuai:
+- Default route mengarah ke Gendo melalui `10.95.4.125`.
+- Jaringan Cage terhubung langsung melalui `eth1`.
+- Tidak ditemukan kerusakan pada routing.
+
+<img width="525" height="140" alt="10 - misato after" src="https://github.com/user-attachments/assets/237dd6bc-9cc2-4b58-ac15-7dfbdf8f783e" />
+
+### Pemeriksaan Gendo
+
+Pemeriksaan IP forwarding dilakukan menggunakan:
+
+```bash
+sysctl net.ipv4.ip_forward
+```
+
+Hasil:
+```text
+net.ipv4.ip_forward = 1
+```
+
+IP forwarding Gendo masih aktif.
+
+Selanjutnya, dilakukan pemeriksaan tabel NAT:
+
+```bash
+iptables -t nat -L POSTROUTING -n -v --line-numbers
+```
+
+Hasil:
+```text
+Chain POSTROUTING (policy ACCEPT 9 packets, 1904 bytes)
+
+num  pkts bytes target      prot opt in out source          destination
+1    0    0     RETURN      all  --  *  eth0 10.95.4.64/29  0.0.0.0/0
+2    48   3363  MASQUERADE  all  --  *  eth0 10.95.0.0/16   0.0.0.0/0
+```
+
+Ditemukan aturan RETURN pada urutan pertama:
+
+```bash
+iptables -t nat -I POSTROUTING 1 -s 10.95.4.64/29 -o eth0 -j RETURN
+```
+
+Aturan tersebut menyebabkan paket dari jaringan Cage yang keluar melalui `eth0` langsung melewati proses NAT berikutnya.
+
+Padahal, Gendo memiliki aturan MASQUERADE:
+
+```bash
+iptables -t nat -A POSTROUTING -s 10.95.0.0/16 -o eth0 -j MASQUERADE
+```
+
+Aturan MASQUERADE tersebut seharusnya menerjemahkan alamat sumber seluruh jaringan internal ketika paket keluar menuju NAT1.
+
+Karena aturan RETURN berada di urutan pertama dan cocok dengan paket dari Cage, aturan MASQUERADE tidak dijalankan untuk trafik tersebut.
+
+Aturan RETURN merupakan penyebab kerusakan kedua.
+
+Pemeriksaan routing dilakukan menggunakan:
+
+```bash
+ip route
+```
+
+Hasil menunjukkan bahwa Gendo masih memiliki default route:
+
+```text
+default via 192.168.122.1 dev eth0 metric 2184
+```
+
+Rute menuju jaringan Cage juga masih tersedia:
+
+```text
+10.95.4.64/29 via 10.95.4.126 dev eth5
+```
+
+Dengan demikian, routing pada Gendo masih benar. Gangguan berasal dari aturan NAT yang telah dimodifikasi.
+
+<img width="591" height="407" alt="10 - gendou after" src="https://github.com/user-attachments/assets/175ae85b-f82c-4128-9880-0438b7f77ea0" />
+
+## Analisis Mengapa Cage Terdampak tetapi Intel Tidak
+
+Gangguan hanya terjadi pada jaringan Cage karena kedua aturan sabotase secara khusus menargetkan subnet:
+
+```text
+10.95.4.64/29
+```
+
+Subnet tersebut digunakan oleh Unit-01, Unit-02, dan Unit-00.
+
+Sementara itu, jaringan Intel menggunakan subnet:
+
+```text
+10.95.4.100/30
+```
+
+Alamat sumber dari jaringan Intel tidak cocok dengan aturan SNAT di Misato maupun aturan RETURN di Gendo.
+
+Akibatnya, trafik dari Intel tetap dapat melewati aturan MASQUERADE yang benar di Gendo.
+
+Hal tersebut dibuktikan melalui pengujian dari perangkat Spy.
+
+Perintah:
+
+```bash
+ping -c 4 8.8.8.8
+```
+
+<img width="403" height="118" alt="10 - ping spy after" src="https://github.com/user-attachments/assets/a2108990-28da-457e-955e-7dc064f7b758" />
+
+Spy tetap berhasil mengakses internet karena alamat sumbernya tidak terkena aturan sabotase.
+
+Selain itu, komunikasi internal antara Cage dan Lilith tetap berjalan karena aturan SNAT pada Misato memiliki pengecualian tujuan jaringan internal:
+
+```text
+! -d 10.95.0.0/16
+```
+
+Artinya, aturan SNAT hanya berlaku untuk trafik menuju luar jaringan internal. Ketika perangkat Cage berkomunikasi dengan Lilith, tujuan masih berada dalam jaringan `10.95.0.0/16`, sehingga aturan SNAT tidak cocok.
+
+Dengan demikian, komunikasi antarjaringan internal tetap berjalan, tetapi akses Cage menuju internet terganggu.
+
+## Perbaikan Konfigurasi NAT
+
+Setelah seluruh penyebab ditemukan, dilakukan penghapusan terhadap dua aturan sabotase tanpa menghapus aturan NAT lainnya.
+
+### Menghapus aturan SNAT pada Misato
+
+Pada router Misato dijalankan:
+
+```bash
+iptables -t nat -D POSTROUTING -s 10.95.4.64/29 ! -d 10.95.0.0/16 -o eth0 -j SNAT --to-source 172.31.99.1
+```
+
+Perintah tersebut menghapus aturan SNAT yang mengubah alamat sumber Cage menjadi `172.31.99.1`.
+
+Kemudian dilakukan pemeriksaan ulang:
+
+```bash
+iptables -t nat -L POSTROUTING -n -v --line-numbers
+```
+
+<img width="491" height="75" alt="10 - misato perbaikan" src="https://github.com/user-attachments/assets/29c0ab63-8f59-47bb-969b-e777c8da67dd" />
+
+Aturan SNAT yang bermasalah sudah tidak digunakan.
+
+### Menghapus aturan RETURN pada Gendo
+
+Pada router Gendo dijalankan:
+
+```bash
+iptables -t nat -D POSTROUTING -s 10.95.4.64/29 -o eth0 -j RETURN
+```
+
+Perintah tersebut menghapus aturan RETURN yang menyebabkan trafik Cage melewati proses MASQUERADE.
+
+Selanjutnya, dipastikan aturan MASQUERADE tetap tersedia:
+
+```bash
+iptables -t nat -C POSTROUTING -s 10.95.0.0/16 -o eth0 -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -s 10.95.0.0/16 -o eth0 -j MASQUERADE
+```
+
+Perintah tersebut memeriksa keberadaan aturan MASQUERADE. Jika belum tersedia, aturan akan ditambahkan.
+
+Aturan yang dipertahankan adalah:
+
+```bash
+iptables -t nat -A POSTROUTING -s 10.95.0.0/16 -o eth0 -j MASQUERADE
+```
+
+Dengan konfigurasi ini, seluruh trafik dari jaringan internal yang keluar melalui Gendo menuju NAT1 akan diterjemahkan menggunakan alamat IP interface `eth0` Gendo.
+
+<img width="554" height="215" alt="10 - gendou perbaikan" src="https://github.com/user-attachments/assets/e747178d-9624-4bbd-bf66-2e8f34ac9052" />
+
+## Pengujian Setelah Perbaikan
+
+Setelah kedua aturan sabotase dihapus, dilakukan pengujian kembali dari Unit-01.
+
+### Pengujian koneksi Unit-01 ke gateway Cage dan ke internet sebelum perbaikan
+
+Perintah:
+
+```bash
+ping -c 4 10.95.4.65
+```
+
+Hasil sebelum perbaikan:
+```text
+4 packets transmitted, 4 received, 0% packet loss
+```
+
+Unit-01 dapat berkomunikasi dengan gateway Cage. Hal ini menunjukkan bahwa koneksi lokal masih berjalan dengan baik.
+
+Perintah:
+
+```bash
+ping -c 4 8.8.8.8
+```
+
+Hasil:
+```text
+4 packets transmitted, 0 received, 100% packet loss
+```
+
+Unit-01 belum dapat mengakses internet sebelum aturan sabotase diperbaiki.
+
+<img width="416" height="176" alt="10 - ping unit after" src="https://github.com/user-attachments/assets/b97340d7-3bf8-42c0-91ce-8f02e98140c2" />
+
+### Pengujian koneksi Unit-01 ke internet setelah perbaikan
+
+Setelah aturan SNAT di Misato dan RETURN di Gendo dihapus, dilakukan pengujian kembali:
+
+```bash
+ping -c 4 8.8.8.8
+```
+
+<img width="433" height="230" alt="10 - ping unit perbaikan" src="https://github.com/user-attachments/assets/70005bb9-dec6-4f43-a4d1-4854c329901c" />
+
+Hasil tersebut membuktikan bahwa Unit-01 sudah dapat mengakses internet setelah konfigurasi NAT diperbaiki.
+
+### Pemeriksaan counter MASQUERADE pada Gendo
+
+Untuk memastikan paket dari Cage benar-benar melewati proses NAT, dilakukan pemeriksaan:
+
+```bash
+iptables -t nat -L POSTROUTING -n -v --line-numbers
+```
+
+<img width="526" height="137" alt="10 - masquerade" src="https://github.com/user-attachments/assets/b414d11c-c050-42c6-8bfe-0d33d0eb479d" />
+
+Hasil pengujian menunjukkan bahwa jumlah paket dan byte pada aturan MASQUERADE bertambah setelah Unit-01 melakukan ping ke `8.8.8.8`.
+
+Hal tersebut membuktikan bahwa paket dari Unit-01 telah melewati aturan MASQUERADE pada Gendo.
+
+## Lokasi Penerjemahan Alamat Sumber
+
+Penerjemahan alamat sumber yang benar dilakukan pada router **Gendo**, tepatnya melalui interface `eth0` yang terhubung ke NAT1.
+
+Aturan yang digunakan:
+
+```bash
+iptables -t nat -A POSTROUTING -s 10.95.0.0/16 -o eth0 -j MASQUERADE
+```
+
+MASQUERADE digunakan karena alamat IP interface Gendo yang terhubung ke NAT1 diperoleh secara dinamis melalui DHCP.
+
+Dengan demikian, alamat sumber dari jaringan internal akan diterjemahkan menggunakan alamat IP terkini pada interface `eth0` Gendo.
+
+Misato tidak seharusnya melakukan NAT karena tugasnya adalah meneruskan paket dari jaringan Cage menuju Gendo.
+
+Alur komunikasi yang benar:
+
+```text
+Unit-01 (10.95.4.66)
+        |
+        v
+Misato (10.95.4.65)
+        |
+        v
+Gendo
+NAT MASQUERADE pada eth0
+        |
+        v
+NAT1
+        |
+        v
+Internet (8.8.8.8)
+```
+
