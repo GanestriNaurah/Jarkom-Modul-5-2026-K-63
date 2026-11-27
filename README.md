@@ -2741,4 +2741,424 @@ ping -c 4 10.95.4.65
 
 Hasil pemeriksaan menunjukkan bahwa konfigurasi IP address dan default gateway tetap tersedia setelah restart.
 
+![alt text](image.png)
 
+![alt text](image-1.png)
+
+![alt text](image-2.png)
+
+![alt text](image-3.png)
+
+![alt text](image-4.png)
+
+![alt text](image-5.png)
+
+# Soal 7
+
+Bertujuan mengaktifkan tiga node MAGI, yaitu
+Magi-Casper, Magi-Balthasar, dan Magi-Melchior, agar dapat menerima
+pesan melalui layanan TCP menggunakan Netcat.
+
+Pekerjaan yang dilakukan meliputi:
+
+1.  Memasang paket `iptables` dan `netcat-traditional` pada ketiga node
+    MAGI.
+2.  Membuat script instalasi pada direktori `/root/`.
+3.  Menjalankan listener TCP sesuai port pada glosarium.
+4.  Mengirim pesan dari node Lilith menuju ketiga MAGI.
+5.  Mengirim pesan khusus ke port TCP 5001 milik Magi-Balthasar.
+6.  Memeriksa pesan yang diterima pada masing-masing node.
+
+## Topologi dan Informasi IP
+
+Ketiga node MAGI berada pada jaringan Terminal yang terhubung melalui
+Switch-Terminal. Lilith berada pada jaringan lain dan mengirimkan pesan
+melalui konfigurasi routing yang telah dibuat pada tahap sebelumnya.
+
+| Node | IP Address | Prefix | Gateway | Port TCP |
+|---|---|---|---|---|
+| Magi-Casper | `10.95.4.58` | `/29` | `10.95.4.57` | 5000 |
+| Magi-Balthasar | `10.95.4.59` | `/29` | `10.95.4.57` | 5000, 5001 |
+| Magi-Melchior | `10.95.4.60` | `/29` | `10.95.4.57` | 5000 |
+| Lilith | `10.95.4.74` | `/29` | `10.95.4.73` | - |
+
+Alamat jaringan Terminal adalah `10.95.4.56/29`, dengan gateway
+`10.95.4.57`. Berdasarkan glosarium, setiap MAGI menggunakan port TCP
+5000, sedangkan Balthasar juga menyediakan port TCP 5001.
+
+## Persiapan pada Setiap Node MAGI
+
+Langkah ini dilakukan secara terpisah pada Magi-Casper, Magi-Balthasar,
+dan Magi-Melchior.
+
+### Memeriksa konfigurasi jaringan
+
+Jalankan perintah berikut:
+
+``` bash
+ip -br addr
+ip route
+```
+
+Pastikan alamat `eth0` sesuai dengan IP masing-masing node dan default
+gateway mengarah ke `10.95.4.57`.
+
+<img width="486" height="110" alt="7 - ip casper" src="https://github.com/user-attachments/assets/24a72641-9c13-4026-9cc4-626f3035921d" />
+
+<img width="524" height="109" alt="7 - ip balthasar" src="https://github.com/user-attachments/assets/5278d0f8-9441-4b0c-8cb3-3368169a34b5" />
+
+<img width="554" height="109" alt="7 - ip melchior" src="https://github.com/user-attachments/assets/8ef2e4d6-e0dc-4306-876f-c677ce6ca1b2" />
+
+### Memeriksa DNS
+
+DNS diatur menggunakan:
+
+``` bash
+printf "nameserver 1.1.1.1\nnameserver 8.8.8.8\n" > /etc/resolv.conf
+```
+
+Periksa resolusi DNS:
+
+``` bash
+ping -c 3 deb.debian.org
+```
+
+<img width="431" height="114" alt="7 - ping casper" src="https://github.com/user-attachments/assets/e88742eb-1a18-4352-9c5c-823296030c49" />
+
+<img width="453" height="113" alt="7 - ping balthasar" src="https://github.com/user-attachments/assets/e48805f8-3e00-49f7-9a04-268d0b38e455" />
+
+<img width="464" height="107" alt="7 - ping melchior" src="https://github.com/user-attachments/assets/6f3f8488-26ec-44fd-8895-a729b6570a25" />
+
+
+Jika nama domain berhasil di resolve, proses pengambilan daftar paket
+dapat dilanjutkan.
+
+## Membuat Script Instalasi
+
+Sesuai instruksi soal, instalasi dilakukan melalui script pada direktori
+`/root/`. Setiap node memiliki script masing-masing.
+
+### Script Magi-Casper
+
+Pada Magi-Casper, buat file:
+
+``` bash
+nano /root/casper.sh
+```
+
+Isi file:
+
+``` bash
+#!/bin/bash
+
+apt-get update
+apt-get install -y iptables netcat-traditional
+
+iptables -F
+iptables -P INPUT ACCEPT
+iptables -P OUTPUT ACCEPT
+iptables -P FORWARD ACCEPT
+
+echo "Magi-Casper siap menerima koneksi."
+```
+
+Simpan file, kemudian berikan izin eksekusi dan jalankan:
+
+``` bash
+chmod +x /root/casper.sh
+/root/casper.sh
+```
+
+<img width="945" height="371" alt="7 - script casper" src="https://github.com/user-attachments/assets/b165750b-c7c1-4f2d-922f-1c182749c8dd" />
+
+### Script Magi-Balthasar
+
+Pada Magi-Balthasar, buat file:
+
+``` bash
+nano /root/balthasar.sh
+```
+
+Isi file:
+
+``` bash
+#!/bin/bash
+
+apt-get update
+apt-get install -y iptables netcat-traditional
+
+iptables -F
+iptables -P INPUT ACCEPT
+iptables -P OUTPUT ACCEPT
+iptables -P FORWARD ACCEPT
+
+echo "Magi-Balthasar siap menerima koneksi."
+```
+
+Simpan, lalu jalankan:
+
+``` bash
+chmod +x /root/balthasar.sh
+/root/balthasar.sh
+```
+
+<img width="951" height="371" alt="7 - script balthasar" src="https://github.com/user-attachments/assets/8271ef1f-e478-4440-bfe1-fa432d964332" />
+
+### Script Magi-Melchior
+
+Pada Magi-Melchior, buat file:
+
+``` bash
+nano /root/melchior.sh
+```
+
+Isi file:
+
+``` bash
+#!/bin/bash
+
+apt-get update
+apt-get install -y iptables netcat-traditional
+
+iptables -F
+iptables -P INPUT ACCEPT
+iptables -P OUTPUT ACCEPT
+iptables -P FORWARD ACCEPT
+
+echo "Magi-Melchior siap menerima koneksi."
+```
+
+Simpan, lalu jalankan:
+
+``` bash
+chmod +x /root/melchior.sh
+/root/melchior.sh
+```
+
+<img width="947" height="371" alt="7 - script melchior" src="https://github.com/user-attachments/assets/d82f3193-a744-4197-99d0-66f53783126a" />
+
+### Penjelasan perintah pada script
+
+| Perintah | Fungsi |
+|---|---|
+| `#!/bin/bash` | Menentukan interpreter Bash untuk menjalankan script. |
+| `apt-get update` | Memperbarui daftar paket dari repository. |
+| `apt-get install -y iptables netcat-traditional` | Memasang iptables dan netcat-traditional. |
+| `iptables -F` | Menghapus seluruh aturan pada tabel filter. |
+| `iptables -P INPUT ACCEPT` | Mengatur kebijakan INPUT menjadi ACCEPT. |
+| `iptables -P OUTPUT ACCEPT` | Mengatur kebijakan OUTPUT menjadi ACCEPT. |
+| `iptables -P FORWARD ACCEPT` | Mengatur kebijakan FORWARD menjadi ACCEPT. |
+| `chmod +x` | Memberikan izin eksekusi pada file script. |
+
+Kebijakan ACCEPT digunakan karena pada tahap ini MAGI diminta untuk
+melayani koneksi terlebih dahulu dan pengamanan akan dibahas pada tahap
+berikutnya. Perintah `iptables -F` menghapus aturan filter yang sudah
+ada pada node tersebut, sehingga penggunaannya perlu dibatasi pada node
+MAGI sesuai instruksi praktikum.
+
+### Memastikan paket telah terpasang
+
+Pada masing-masing node, jalankan:
+
+``` bash
+dpkg -l iptables netcat-traditional
+```
+
+Paket yang berhasil terpasang ditandai dengan status `ii` pada awal
+baris.
+
+<img width="623" height="101" alt="7 - paket casper" src="https://github.com/user-attachments/assets/9ee0f98f-49fd-4790-a1da-83e70857db45" />
+
+<img width="602" height="99" alt="7 - paket balthasar" src="https://github.com/user-attachments/assets/95cbd944-752a-48f0-bb25-27a17446c79c" />
+
+<img width="604" height="98" alt="7 - paket melchior" src="https://github.com/user-attachments/assets/15f6d959-e17c-4993-bb5c-d7b1834f3911" />
+
+## Mengaktifkan Listener TCP
+
+Setelah paket terpasang, setiap MAGI dijalankan sebagai server TCP
+menggunakan Netcat. Pesan yang diterima diarahkan ke file log agar dapat
+diperiksa setelah pengiriman.
+
+### Listener Magi-Casper
+
+Pada terminal Magi-Casper:
+
+``` bash
+nc -l -p 5000 > /tmp/casper.log &
+nc.traditional -l -p 5000 > /tmp/casper.log &
+```
+
+Periksa apakah port 5000 sedang mendengarkan:
+
+``` bash
+ss -lntp
+```
+
+Port TCP `5000` harus terlihat dalam status `LISTEN`.
+
+<img width="897" height="99" alt="7 - listen casper" src="https://github.com/user-attachments/assets/d05c9583-0d6c-42c3-ad13-6c38dfe98600" />
+
+### Listener Magi-Balthasar
+
+Magi-Balthasar harus membuka dua listener karena glosarium menetapkan
+dua port, yaitu 5000 dan 5001.
+
+Jalankan:
+
+``` bash
+nc -l -p 5000 > /tmp/balthasar-5000.log &
+nc -l -p 5001 > /tmp/balthasar-5001.log &
+
+nc.traditional -l -p 5000 > /tmp/balthasar-5000.log &
+nc.traditional -l -p 5001 > /tmp/balthasar-5001.log &
+```
+
+Periksa:
+
+``` bash
+ss -lntp
+```
+
+Pastikan port `5000` dan `5001` sama-sama muncul dalam status `LISTEN`.
+
+<img width="923" height="167" alt="7 - listen balthasar" src="https://github.com/user-attachments/assets/233eab84-8f57-4d5b-a1da-efb17101d399" />
+
+### Listener Magi-Melchior
+
+Pada terminal Magi-Melchior:
+
+``` bash
+nc -l -p 5000 > /tmp/melchior.log &
+
+nc.traditional -l -p 5000 > /tmp/melchior.log &
+```
+
+Periksa:
+
+``` bash
+ss -lntp
+```
+
+Pastikan port `5000` muncul dalam status `LISTEN`.
+
+<img width="590" height="126" alt="7 - listen melchior" src="https://github.com/user-attachments/assets/558ba594-2993-4396-92fa-81629c3b4748" />
+
+### Penjelasan perintah listener
+
+| Perintah | Fungsi |
+|---|---|
+| `nc.traditional` | Menjalankan implementasi Netcat Traditional. |
+| `-l` | Menjalankan Netcat dalam mode listen/server. |
+| `-p 5000` | Menentukan port TCP yang digunakan. |
+| `> /tmp/nama.log` | Mengarahkan pesan yang diterima ke file log. |
+| `&` | Menjalankan proses di background. |
+| `ss -lntp` | Menampilkan socket TCP yang sedang listen beserta informasi prosesnya. |
+
+Listener yang digunakan menerima satu koneksi, kemudian prosesnya berhenti. Oleh karena itu, listener harus dijalankan kembali sebelum pengujian pengiriman berikutnya jika proses sebelumnya sudah selesai.
+
+## Mengirim Pesan dari Lilith
+
+Setelah listener aktif, pengiriman pesan dilakukan dari node Lilith.
+
+Pengiriman pesan menggunakan Netcat Traditional dengan perintah `nc.traditional`.
+
+### Catatan instalasi Netcat Traditional pada Lilith
+
+Instalasi  paket `netcat-traditional` pada Lilith menggunakan:
+
+``` bash
+printf "nameserver 1.1.1.1\nnameserver 8.8.8.8\n" > /etc/resolv.conf
+```
+
+```bash
+apt-get update
+apt-get install -y netcat-traditional
+```
+
+### Mengirim pesan ke Magi-Casper
+
+```bash
+echo "Halo MAGI Casper, pesan dari Lilith!" | nc.traditional -w 3 10.95.4.58 5000
+```
+
+Tujuan:
+- IP tujuan: `10.95.4.58`
+- Port TCP: `5000`
+
+### Mengirim pesan ke Magi-Balthasar port 5000
+
+```bash
+echo "Halo MAGI Balthasar port 5000, pesan dari Lilith!" | nc.traditional -w 3 10.95.4.59 5000
+```
+
+Tujuan:
+- IP tujuan: `10.95.4.59`
+- Port TCP: `5000`
+
+### Mengirim pesan ke Magi-Balthasar port 5001
+
+```bash
+echo "Halo MAGI Balthasar port 5001, pesan dari Lilith!" | nc.traditional -w 3 10.95.4.59 5001
+```
+
+Tujuan:
+- IP tujuan: `10.95.4.59`
+- Port TCP: `5001`
+
+Pengujian port 5001 wajib dilakukan karena soal secara khusus meminta pengiriman pesan ke port tersebut.
+
+### Mengirim pesan ke Magi-Melchior
+
+```bash
+echo "Halo MAGI Melchior, pesan dari Lilith!" | nc.traditional -w 3 10.95.4.60 5000
+```
+
+Tujuan:
+- IP tujuan: `10.95.4.60`
+- Port TCP: `5000`
+
+Opsi `-w 3` digunakan untuk memberikan batas waktu tiga detik pada proses komunikasi.
+
+## Memeriksa Pesan yang Diterima
+
+Setelah pengiriman pesan dilakukan, file log diperiksa pada masing-masing node MAGI.
+
+### Memeriksa Magi-Casper
+
+Pada Magi-Casper:
+
+```bash
+cat /tmp/casper.log
+```
+
+<img width="457" height="68" alt="7 - pesan casper" src="https://github.com/user-attachments/assets/6fb67830-9190-4ccf-b7f0-0bcdfb285660" />
+
+### Memeriksa Magi-Balthasar port 5000
+
+Pada Magi-Balthasar:
+
+```bash
+cat /tmp/balthasar-5000.log
+```
+
+<img width="362" height="26" alt="7 - pesan balthasar 5000" src="https://github.com/user-attachments/assets/31db3fad-f1a8-4058-ab0c-4ed61b44a53c" />
+
+### Memeriksa Magi-Balthasar port 5001
+
+Masih pada Magi-Balthasar:
+
+```bash
+cat /tmp/balthasar-5001.log
+```
+
+<img width="332" height="29" alt="7 - pesan balthasar 5001" src="https://github.com/user-attachments/assets/abcdd4e4-0c73-4bbd-9fed-d37be3aa9431" />
+
+### Memeriksa Magi-Melchior
+
+Pada Magi-Melchior:
+
+```bash
+cat /tmp/melchior.log
+```
+
+<img width="502" height="39" alt="7 - pesan melchior" src="https://github.com/user-attachments/assets/0c51a01e-e863-4177-a1de-33613a9bccba" />
